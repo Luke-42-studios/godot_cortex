@@ -1,0 +1,63 @@
+# CortexFramework .gitignore
+
+# Build outputs
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.pdb
+*.exp
+*.ilk
+*.idb
+
+# SCons
+.sconsign.dblite
+*.pyc
+__pycache__/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vcxproj.user
+
+# Build directories
+obj/
+demo/bin/*.dll
+demo/bin/*.so
+demo/bin/*.dylib
+demo/bin/*.pdb
+demo/bin/*.lib
+demo/bin/*.exp
+
+# godot-cpp generated files (rebuilt on compile)
+godot-cpp/bin/
+godot-cpp/gen/
+
+# Flecs build artifacts
+flecs/**/*.obj
+flecs/**/*.o
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Godot
+.godot/
+*.import
+
+# Keep the gdextension file
+!demo/bin/*.gdextension

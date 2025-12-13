@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://bx8qs2h9kxv3p"]
+
+[ext_resource type="Script" path="res://autoload/scene_tracker_autoload.gd" id="1_tracker"]
+
+[node name="SceneTrackerAutoload" type="SceneTracker"]
+script = ExtResource("1_tracker")
+auto_track_all = true
