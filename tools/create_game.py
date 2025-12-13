@@ -223,13 +223,22 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     print(f"  Created: {path}")
 
 
-def write_sln(project_path: Path, project_name: str, project_guid: str):
-    """Generate the Visual Studio solution file."""
+def write_sln(project_path: Path, project_name: str, project_guid: str, cortex_path: Path):
+    """Generate the Visual Studio solution file with both game and Cortex projects."""
+    # Cortex project GUID (must match cortex.vcxproj)
+    cortex_guid = '{8A2E8F5A-0C3D-4F1E-9B5A-1234567890AB}'
+    cortex_vcxproj = cortex_path / 'cortex.vcxproj'
+
     content = f'''Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "{project_name}", "{project_name}.vcxproj", "{project_guid}"
+	ProjectSection(ProjectDependencies) = postProject
+		{cortex_guid} = {cortex_guid}
+	EndProjectSection
+EndProject
+Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "cortex", "{cortex_vcxproj}", "{cortex_guid}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -241,6 +250,10 @@ Global
 		{project_guid}.Debug|x64.Build.0 = Debug|x64
 		{project_guid}.Release|x64.ActiveCfg = Release|x64
 		{project_guid}.Release|x64.Build.0 = Release|x64
+		{cortex_guid}.Debug|x64.ActiveCfg = Debug|x64
+		{cortex_guid}.Debug|x64.Build.0 = Debug|x64
+		{cortex_guid}.Release|x64.ActiveCfg = Release|x64
+		{cortex_guid}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 EndGlobal
 '''
@@ -604,7 +617,7 @@ Examples:
     write_register_types_cpp(project_path, project_name)
     write_example_context(project_path, project_name)
     write_vcxproj(project_path, project_name, cortex_path, project_guid)
-    write_sln(project_path, project_name, project_guid)
+    write_sln(project_path, project_name, project_guid, cortex_path)
     write_gdextension(project_path, project_name)
     write_cortex_gdextension(project_path)
 
@@ -614,7 +627,7 @@ Examples:
     print("=" * 60)
     print(f'''
   Created in {project_path}:
-    {project_name}.sln       <- Open in Visual Studio
+    {project_name}.sln       <- Open in Visual Studio (includes Cortex!)
     {project_name}.vcxproj
     SConstruct
     src/
@@ -625,18 +638,22 @@ Examples:
         {project_name}.gdextension
         cortex.gdextension
 
+  Solution contains:
+    - {project_name}  (your game - set as startup project)
+    - cortex          (framework - builds first, debuggable)
+
   Next steps:
 
-  1. Build Cortex (if needed):
-     cd {cortex_path}
-     scons
+  1. Open {project_name}.sln in Visual Studio
 
-  2. Build your game:
-     Open {project_name}.sln in Visual Studio and press F7
-     -or-
-     cd {project_path} && scons
+  2. Build solution (F7) - builds Cortex first, then your game
 
-  3. Run Godot - extensions load automatically!
+  3. To debug:
+     - Set breakpoints in Cortex or game code
+     - Debug > Attach to Process > select Godot
+     - Or configure Godot as the debug executable
+
+  4. Run Godot - extensions load automatically!
 ''')
 
 

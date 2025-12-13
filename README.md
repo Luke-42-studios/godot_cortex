@@ -231,13 +231,64 @@ GD_BIND_SIGNAL_1(damaged, Variant::INT, amount);
 GD_BIND_CONTEXT(MyNode, MyContext, context);
 ```
 
-## Building
+## Getting Started
+
+### Adding C++ to a Godot Project
+
+Use the project generator to add CortexFramework support to any Godot project:
+
+```bash
+cd cortex
+python tools/create_game.py
+```
+
+This will:
+1. Scan for Godot projects and let you select one
+2. Generate a Visual Studio solution with both your game and Cortex
+3. Create starter source files in `src/`
+4. Set up `.gdextension` files in `bin/`
+
+**Generated structure in your Godot project:**
+```
+MyGame/
+    my_game.sln              <- Open in Visual Studio
+    my_game.vcxproj          <- Your game project
+    SConstruct               <- SCons build file
+    src/
+        register_types.cpp
+        register_types.h
+        start_button_context.h   <- Example context
+    bin/
+        my_game.gdextension
+        cortex.gdextension
+    project.godot            (existing)
+    scenes/                  (existing)
+```
+
+### Solution Structure
+
+The generated `.sln` includes both projects:
+
+- **Your game project** - Your custom contexts and game code
+- **Cortex project** - The framework (editable, debuggable)
+
+Cortex is set as a dependency, so it builds first automatically.
+
+### Debugging
+
+1. Open your `.sln` in Visual Studio
+2. Build the solution (F7)
+3. Set breakpoints anywhere - in your game or in Cortex code
+4. Debug → Attach to Process → select Godot
+5. Or set Godot as the startup executable for direct debugging
+
+## Building Cortex Standalone
 
 ### Requirements
 
 - Python 3.x
 - SCons
-- godot-cpp (in `godot-cpp` subdirectory)
+- godot-cpp (submodule)
 - C++20 compiler (MSVC, GCC, or Clang)
 
 ### Build Commands
@@ -256,6 +307,8 @@ scons platform=linux target=template_debug
 scons platform=macos target=template_debug
 ```
 
+Or open `cortex.sln` in Visual Studio and build (F7).
+
 ## Project Structure
 
 ```
@@ -270,11 +323,14 @@ cortex/
 │   ├── option_menu_context.cpp # Complex context example (.cpp)
 │   ├── flecs_world.h/cpp       # Flecs ECS singleton
 │   └── register_types.cpp      # Class registration
-├── flecs/                      # Flecs ECS library
-├── godot-cpp/                  # Godot C++ bindings
-├── demo/bin/                   # Built libraries
-│   └── cortex.gdextension      # Godot extension config
+├── tools/
+│   └── create_game.py          # Game project generator
+├── flecs/                      # Flecs ECS library (submodule)
+├── godot-cpp/                  # Godot C++ bindings (submodule)
+├── lib/                        # Built Cortex library
+├── demo/bin/                   # Demo binaries
 ├── SConstruct                  # Build script
+├── cortex.sln                  # Visual Studio solution
 └── README.md
 ```
 
