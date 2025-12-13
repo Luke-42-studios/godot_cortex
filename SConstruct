@@ -17,7 +17,6 @@ import os
 import sys
 
 # Get the path to godot-cpp
-# Can be customized via GODOT_CPP_PATH environment variable
 godot_cpp_path = os.environ.get('GODOT_CPP_PATH', 'godot-cpp')
 
 # Add godot-cpp to the build environment
@@ -45,7 +44,6 @@ for root, dirs, files in os.walk(flecs_src):
         if f.endswith('.c'):
             flecs_sources.append(os.path.join(root, f))
 
-# Add Flecs sources to build
 sources.extend(flecs_sources)
 
 # Flecs configuration - build as static library embedded in our DLL
@@ -57,8 +55,9 @@ if env['platform'] == 'windows':
 else:
     env.Append(CXXFLAGS=['-std=c++20'])
 
-# Output directory
-output_dir = os.path.join('demo', 'bin')
+# Output directory - build to lib/ for game projects to link against
+lib_output_dir = 'lib'
+demo_output_dir = os.path.join('demo', 'bin')
 
 # Platform-specific library name and extension
 if env['platform'] == 'windows':
@@ -68,8 +67,8 @@ elif env['platform'] == 'macos':
 else:
     lib_suffix = '.so'
 
-# Determine the library name with platform and target
-# e.g., libgdframework.windows.template_debug.x86_64.dll
+# Library naming convention
+# e.g., libcortex.windows.template_debug.x86_64.dll
 library_name = 'lib{}.{}.{}.{}{}'.format(
     project_name,
     env['platform'],
@@ -78,45 +77,38 @@ library_name = 'lib{}.{}.{}.{}{}'.format(
     lib_suffix
 )
 
-# For macOS, we create a framework structure
-if env['platform'] == 'macos':
-    output_path = os.path.join(output_dir, 'lib{}.{}.{}.framework'.format(
-        project_name,
-        env['platform'],
-        env['target']
-    ), library_name)
-else:
-    output_path = os.path.join(output_dir, library_name)
+# Build to lib/ directory
+lib_output_path = os.path.join(lib_output_dir, library_name)
 
 # Build the shared library
 library = env.SharedLibrary(
-    target=output_path,
+    target=lib_output_path,
     source=sources
 )
 
 Default(library)
 
-# Copy to project folder after build
-project_bin_dir = os.path.abspath(r'C:\Workspace\Godot\cpp-sample\bin')
-
-def copy_to_project(target, source, env):
+# Also copy to demo/bin for standalone testing
+def copy_to_demo(target, source, env):
     import shutil
+    os.makedirs(demo_output_dir, exist_ok=True)
     for src in source:
         src_path = str(src)
         filename = os.path.basename(src_path)
-        dst_path = os.path.join(project_bin_dir, filename)
+        dst_path = os.path.join(demo_output_dir, filename)
         print(f"Copying {src_path} -> {dst_path}")
         shutil.copy2(src_path, dst_path)
         # Also copy PDB if it exists (Windows debug symbols)
         pdb_path = src_path.replace('.dll', '.pdb')
         if os.path.exists(pdb_path):
-            pdb_dst = os.path.join(project_bin_dir, os.path.basename(pdb_path))
-            print(f"Copying {pdb_path} -> {pdb_dst}")
+            pdb_dst = os.path.join(demo_output_dir, os.path.basename(pdb_path))
             shutil.copy2(pdb_path, pdb_dst)
 
-if os.path.isdir(project_bin_dir):
-    copy_command = env.Command('copy_to_project', library, copy_to_project)
-    Default(copy_command)
+copy_demo = env.Command('copy_to_demo', library, copy_to_demo)
+Default(copy_demo)
+
+# Export variables for game projects that import this SConstruct
+Export('env', 'project_name', 'lib_output_dir', 'library_name')
 
 # Help text
 Help("""
@@ -133,17 +125,10 @@ Options:
     target=<target>     Build target: template_debug (default), template_release, editor
     platform=<platform> Target platform: windows, linux, macos
     arch=<arch>         Target architecture: x86_64, arm64
-    use_mingw=yes       Use MinGW on Windows (default is MSVC)
-    debug_symbols=yes   Include debug symbols
 
-Examples:
-    scons target=template_release platform=windows
-    scons target=editor platform=linux
-    scons platform=macos arch=arm64
+Output:
+    lib/                Contains the built Cortex library (for linking)
+    demo/bin/           Contains a copy for standalone demo testing
 
-Requirements:
-    - Python 3.x
-    - SCons
-    - godot-cpp (in 'godot-cpp' subdirectory)
-    - Platform-appropriate compiler (MSVC/MinGW for Windows, GCC/Clang for Linux/macOS)
+For game projects, use: python tools/create_game.py <path> <name>
 """)
