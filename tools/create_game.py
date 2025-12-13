@@ -2,17 +2,16 @@
 """
 CortexFramework Game Project Generator
 
-Creates a new game project that links against the Cortex framework.
-Can add to an existing Godot project or create a new one.
+Adds Cortex C++ extension support to an existing Godot project.
+Creates src/, SConstruct, and VS solution files in the project root.
 
 Usage:
-    python tools/create_game.py                    # Interactive mode
-    python tools/create_game.py <game_name>        # Create with name, select project
-    python tools/create_game.py <path> <game_name> # Specify path and name
+    python tools/create_game.py                    # Interactive - select project
+    python tools/create_game.py <godot_project>    # Specify project path
 
 Example:
-    python tools/create_game.py mygame
-    python tools/create_game.py C:/Games/MyGame mygame
+    python tools/create_game.py
+    python tools/create_game.py C:/Games/MyGame
 """
 
 import os
@@ -30,7 +29,6 @@ def get_cortex_path():
 def find_godot_projects(search_paths=None):
     """Find Godot projects by looking for .godot folders or project.godot files."""
     if search_paths is None:
-        # Default search locations
         search_paths = [
             Path.home() / 'Documents',
             Path.home() / 'Projects',
@@ -39,7 +37,6 @@ def find_godot_projects(search_paths=None):
             Path.cwd().parent,
             Path.cwd().parent.parent,
         ]
-        # Add common Windows paths
         if sys.platform == 'win32':
             search_paths.extend([
                 Path('C:/Games'),
@@ -56,7 +53,6 @@ def find_godot_projects(search_paths=None):
         if not base_path.exists():
             continue
 
-        # Search up to 3 levels deep
         for depth in range(3):
             pattern = '/'.join(['*'] * (depth + 1))
             for godot_marker in base_path.glob(f'{pattern}/project.godot'):
@@ -71,7 +67,6 @@ def find_godot_projects(search_paths=None):
                     seen.add(project_path)
                     projects.append(project_path)
 
-    # Sort by name
     projects.sort(key=lambda p: p.name.lower())
     return projects
 
@@ -80,7 +75,10 @@ def select_godot_project(projects):
     """Interactive selection of a Godot project."""
     if not projects:
         print("\nNo Godot projects found in common locations.")
-        print("Enter a path manually or create a new project.\n")
+        print("Enter a path manually.\n")
+        path = input("Enter Godot project path: ").strip()
+        if path:
+            return Path(path).absolute()
         return None
 
     print("\n" + "=" * 50)
@@ -91,7 +89,7 @@ def select_godot_project(projects):
         print(f"  [{i}] {project.name}")
         print(f"      {project}")
 
-    print(f"\n  [N] Create NEW project at custom path")
+    print(f"\n  [N] Enter custom path")
     print(f"  [Q] Quit")
     print()
 
@@ -102,7 +100,7 @@ def select_godot_project(projects):
             sys.exit(0)
 
         if choice == 'N':
-            path = input("Enter path for new project: ").strip()
+            path = input("Enter Godot project path: ").strip()
             if path:
                 return Path(path).absolute()
             continue
@@ -117,23 +115,23 @@ def select_godot_project(projects):
         print("Invalid selection. Try again.")
 
 
-def get_game_name():
-    """Prompt for game name."""
-    while True:
-        name = input("Enter game/extension name (e.g., mygame): ").strip().lower()
-        name = name.replace('-', '_').replace(' ', '_')
+def get_project_name(project_path: Path):
+    """Derive extension name from project folder name."""
+    name = project_path.name.lower()
+    # Clean up the name for C++ identifier
+    name = ''.join(c if c.isalnum() or c == '_' else '_' for c in name)
+    name = name.strip('_')
+    # Ensure it starts with a letter
+    if name and name[0].isdigit():
+        name = 'game_' + name
+    return name or 'game'
 
-        if name and name.isidentifier():
-            return name
 
-        print("Invalid name. Use only letters, numbers, and underscores (no leading numbers).")
-
-
-def create_directory_structure(game_path: Path, game_name: str):
-    """Create the game project directory structure."""
+def create_directory_structure(project_path: Path):
+    """Create the project directory structure."""
     dirs = [
-        game_path / game_name / 'src',
-        game_path / 'bin',
+        project_path / 'src',
+        project_path / 'bin',
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -145,11 +143,8 @@ def generate_uuid():
     return '{' + str(uuid.uuid4()).upper() + '}'
 
 
-def write_vcxproj(game_path: Path, game_name: str, cortex_path: Path, project_guid: str):
+def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, project_guid: str):
     """Generate the Visual Studio project file."""
-    # Convert game_name to PascalCase for display
-    display_name = ''.join(word.capitalize() for word in game_name.split('_'))
-
     content = f'''<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
@@ -165,7 +160,7 @@ def write_vcxproj(game_path: Path, game_name: str, cortex_path: Path, project_gu
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{project_guid}</ProjectGuid>
-    <RootNamespace>{game_name}</RootNamespace>
+    <RootNamespace>{project_name}</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <Keyword>MakeFileProj</Keyword>
   </PropertyGroup>
@@ -188,23 +183,23 @@ def write_vcxproj(game_path: Path, game_name: str, cortex_path: Path, project_gu
     <Import Project="$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(ProjectDir)..\\bin\\</OutDir>
+    <OutDir>$(ProjectDir)bin\\</OutDir>
     <IntDir>$(ProjectDir)obj\\</IntDir>
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)..\\bin\\lib{game_name}.windows.template_debug.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.template_debug.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>DEBUG_ENABLED;DEBUG_METHODS_ENABLED;WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;_DEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(ProjectDir)..\\bin\\</OutDir>
+    <OutDir>$(ProjectDir)bin\\</OutDir>
     <IntDir>$(ProjectDir)obj\\</IntDir>
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_release</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_release</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)..\\bin\\lib{game_name}.windows.template_release.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.template_release.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;NDEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
@@ -223,21 +218,18 @@ def write_vcxproj(game_path: Path, game_name: str, cortex_path: Path, project_gu
 </Project>
 '''
 
-    path = game_path / game_name / f'{game_name}.vcxproj'
+    path = project_path / f'{project_name}.vcxproj'
     path.write_text(content)
     print(f"  Created: {path}")
-    return path
 
 
-def write_sln(game_path: Path, game_name: str, project_guid: str):
+def write_sln(project_path: Path, project_name: str, project_guid: str):
     """Generate the Visual Studio solution file."""
-    display_name = ''.join(word.capitalize() for word in game_name.split('_'))
-
     content = f'''Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "{game_name}", "{game_name}\\{game_name}.vcxproj", "{project_guid}"
+Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "{project_name}", "{project_name}.vcxproj", "{project_guid}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -253,18 +245,16 @@ Global
 EndGlobal
 '''
 
-    # Solution file goes in the game root (Godot project root)
-    path = game_path / f'{game_name}.sln'
+    path = project_path / f'{project_name}.sln'
     path.write_text(content)
     print(f"  Created: {path}")
-    return path
 
 
-def write_sconstruct(game_path: Path, game_name: str, cortex_path: Path):
+def write_sconstruct(project_path: Path, project_name: str, cortex_path: Path):
     """Generate the SConstruct build file."""
     content = f'''#!/usr/bin/env python
 """
-SConstruct - Build script for {game_name}
+SConstruct - Build script for {project_name}
 
 This game project links against CortexFramework.
 """
@@ -281,10 +271,10 @@ godot_cpp_path = os.path.join(cortex_path, 'godot-cpp')
 env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
 
 # Project configuration
-project_name = '{game_name}'
+project_name = '{project_name}'
 src_dir = 'src'
 
-# Include paths - Cortex headers and godot-cpp
+# Include paths
 env.Append(CPPPATH=[
     src_dir,
     os.path.join(cortex_path, 'src'),
@@ -305,7 +295,7 @@ sources = Glob(os.path.join(src_dir, '*.cpp'))
 sources += Glob(os.path.join(src_dir, '*.c'))
 
 # Output configuration
-output_dir = os.path.join('..', 'bin')
+output_dir = 'bin'
 
 # Platform-specific settings
 if env['platform'] == 'windows':
@@ -346,7 +336,6 @@ def copy_cortex_lib(target, source, env):
     bin_dir = os.path.abspath(output_dir)
     os.makedirs(bin_dir, exist_ok=True)
 
-    # Find and copy all Cortex libraries for current platform/target
     if os.path.exists(cortex_lib_dir):
         for f in os.listdir(cortex_lib_dir):
             if f.startswith('libcortex.') and env['platform'] in f and env['target'] in f:
@@ -354,7 +343,6 @@ def copy_cortex_lib(target, source, env):
                 dst = os.path.join(bin_dir, f)
                 print(f"Copying Cortex: {{src}} -> {{dst}}")
                 shutil.copy2(src, dst)
-                # Copy PDB for Windows
                 if f.endswith('.dll'):
                     pdb = src.replace('.dll', '.pdb')
                     if os.path.exists(pdb):
@@ -364,49 +352,45 @@ copy_cortex = env.Command('copy_cortex', library, copy_cortex_lib)
 Default(copy_cortex)
 
 Help("""
-{game_name} Build System
-========================
-
-Game built with CortexFramework.
+{project_name} - CortexFramework Game
+=====================================
 
 Build:
-    scons                           # Build debug
-    scons target=template_release   # Build release
+    scons                           # Debug build
+    scons target=template_release   # Release build
 
-Or use Visual Studio: Open {game_name}.sln and build (F7)
-
-Output goes to ../bin/ (your Godot project's bin folder).
+Or open {project_name}.sln in Visual Studio and build (F7)
 """)
 '''
 
-    path = game_path / game_name / 'SConstruct'
+    path = project_path / 'SConstruct'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
-def write_register_types_h(game_path: Path, game_name: str):
+def write_register_types_h(project_path: Path, project_name: str):
     """Generate register_types.h"""
-    content = f'''#ifndef {game_name.upper()}_REGISTER_TYPES_H
-#define {game_name.upper()}_REGISTER_TYPES_H
+    content = f'''#ifndef {project_name.upper()}_REGISTER_TYPES_H
+#define {project_name.upper()}_REGISTER_TYPES_H
 
 #include <godot_cpp/core/class_db.hpp>
 
 using namespace godot;
 
-void initialize_{game_name}_module(ModuleInitializationLevel p_level);
-void uninitialize_{game_name}_module(ModuleInitializationLevel p_level);
+void initialize_{project_name}_module(ModuleInitializationLevel p_level);
+void uninitialize_{project_name}_module(ModuleInitializationLevel p_level);
 
-#endif // {game_name.upper()}_REGISTER_TYPES_H
+#endif
 '''
 
-    path = game_path / game_name / 'src' / 'register_types.h'
+    path = project_path / 'src' / 'register_types.h'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
-def write_register_types_cpp(game_path: Path, game_name: str):
+def write_register_types_cpp(project_path: Path, project_name: str):
     """Generate register_types.cpp"""
-    class_prefix = ''.join(word.capitalize() for word in game_name.split('_'))
+    class_prefix = ''.join(word.capitalize() for word in project_name.split('_'))
 
     content = f'''#include "register_types.h"
 
@@ -414,40 +398,36 @@ def write_register_types_cpp(game_path: Path, game_name: str):
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
 
-// Include your game contexts here
+// Game contexts
 #include "start_button_context.h"
 
 using namespace godot;
 
-void initialize_{game_name}_module(ModuleInitializationLevel p_level) {{
+void initialize_{project_name}_module(ModuleInitializationLevel p_level) {{
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {{
         return;
     }}
 
-    // Register your game-specific contexts
+    // Register game contexts
     ClassDB::register_class<{class_prefix}StartButtonContext>();
-
-    // Add more context registrations here:
-    // ClassDB::register_class<{class_prefix}EnemyContext>();
-    // ClassDB::register_class<{class_prefix}PlayerContext>();
 }}
 
-void uninitialize_{game_name}_module(ModuleInitializationLevel p_level) {{
+void uninitialize_{project_name}_module(ModuleInitializationLevel p_level) {{
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {{
         return;
     }}
 }}
 
 extern "C" {{
-    GDExtensionBool GDE_EXPORT {game_name}_library_init(
+    GDExtensionBool GDE_EXPORT {project_name}_library_init(
         GDExtensionInterfaceGetProcAddress p_get_proc_address,
         const GDExtensionClassLibraryPtr p_library,
         GDExtensionInitialization *r_initialization
     ) {{
         godot::GDExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
 
-        init_obj.register_initializer(initialize_{game_name}_module);
-        init_obj.register_terminator(uninitialize_{game_name}_module);
+        init_obj.register_initializer(initialize_{project_name}_module);
+        init_obj.register_terminator(uninitialize_{project_name}_module);
         init_obj.set_minimum_library_initialization_level(MODULE_INITIALIZATION_LEVEL_SCENE);
 
         return init_obj.init();
@@ -455,19 +435,18 @@ extern "C" {{
 }}
 '''
 
-    path = game_path / game_name / 'src' / 'register_types.cpp'
+    path = project_path / 'src' / 'register_types.cpp'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
-def write_example_context(game_path: Path, game_name: str):
+def write_example_context(project_path: Path, project_name: str):
     """Generate an example button context."""
-    class_prefix = ''.join(word.capitalize() for word in game_name.split('_'))
+    class_prefix = ''.join(word.capitalize() for word in project_name.split('_'))
 
-    content = f'''#ifndef {game_name.upper()}_START_BUTTON_CONTEXT_H
-#define {game_name.upper()}_START_BUTTON_CONTEXT_H
+    content = f'''#ifndef {project_name.upper()}_START_BUTTON_CONTEXT_H
+#define {project_name.upper()}_START_BUTTON_CONTEXT_H
 
-// Cortex framework headers
 #include "clay_button_node.h"
 #include "gd_macros.h"
 
@@ -476,77 +455,53 @@ def write_example_context(game_path: Path, game_name: str):
 
 using namespace godot;
 
-/**
- * {class_prefix}StartButtonContext
- *
- * Example game-specific context that extends ClayButtonContext.
- * Demonstrates how to create custom button behaviors.
- *
- * Usage in Godot Editor:
- * 1. Add a ClayButtonNode to your scene
- * 2. In Inspector, set Context to a new {class_prefix}StartButtonContext
- * 3. Configure properties as needed
- */
 class {class_prefix}StartButtonContext : public ClayButtonContext {{
     GDCLASS({class_prefix}StartButtonContext, ClayButtonContext);
 
-    // Properties editable in Godot Inspector
     GD_PROPERTY(String, game_scene, "res://scenes/game.tscn")
-    GD_PROPERTY(String, transition_effect, "fade")
-    GD_PROPERTY(float, transition_duration, 0.5f)
 
 protected:
     static void _bind_methods() {{
         GD_BIND_PROPERTY({class_prefix}StartButtonContext, game_scene);
-        GD_BIND_PROPERTY({class_prefix}StartButtonContext, transition_effect);
-        GD_BIND_PROPERTY({class_prefix}StartButtonContext, transition_duration);
     }}
 
 public:
     void on_pressed() override {{
-        UtilityFunctions::print("[{class_prefix}] Start button pressed!");
+        UtilityFunctions::print("[{class_prefix}] Button pressed!");
 
-        ClayButtonNode* btn = get_node<ClayButtonNode>();
-        if (btn) {{
-            UtilityFunctions::print("  Button label: ", btn->get_label());
-        }}
-
-        // Change scene example (uncomment when ready):
+        // Change scene example:
+        // ClayButtonNode* btn = get_node<ClayButtonNode>();
         // if (btn && !game_scene.is_empty()) {{
         //     btn->get_tree()->change_scene_to_file(game_scene);
         // }}
     }}
 
     void on_hover_enter() override {{
-        UtilityFunctions::print("[{class_prefix}] Hover enter");
-    }}
-
-    void on_hover_exit() override {{
-        UtilityFunctions::print("[{class_prefix}] Hover exit");
+        UtilityFunctions::print("[{class_prefix}] Hover");
     }}
 }};
 
-#endif // {game_name.upper()}_START_BUTTON_CONTEXT_H
+#endif
 '''
 
-    path = game_path / game_name / 'src' / 'start_button_context.h'
+    path = project_path / 'src' / 'start_button_context.h'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
-def write_gdextension(game_path: Path, game_name: str):
+def write_gdextension(project_path: Path, project_name: str):
     """Generate the .gdextension file for the game."""
     content = f'''[configuration]
-entry_symbol = "{game_name}_library_init"
+entry_symbol = "{project_name}_library_init"
 compatibility_minimum = "4.2"
 
 [libraries]
-windows.debug.x86_64 = "res://bin/lib{game_name}.windows.template_debug.x86_64.dll"
-windows.release.x86_64 = "res://bin/lib{game_name}.windows.template_release.x86_64.dll"
-linux.debug.x86_64 = "res://bin/lib{game_name}.linux.template_debug.x86_64.so"
-linux.release.x86_64 = "res://bin/lib{game_name}.linux.template_release.x86_64.so"
-macos.debug = "res://bin/lib{game_name}.macos.template_debug.universal.dylib"
-macos.release = "res://bin/lib{game_name}.macos.template_release.universal.dylib"
+windows.debug.x86_64 = "res://bin/lib{project_name}.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/lib{project_name}.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://bin/lib{project_name}.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/lib{project_name}.linux.template_release.x86_64.so"
+macos.debug = "res://bin/lib{project_name}.macos.template_debug.universal.dylib"
+macos.release = "res://bin/lib{project_name}.macos.template_release.universal.dylib"
 
 [dependencies]
 windows.debug.x86_64 = {{"res://bin/libcortex.windows.template_debug.x86_64.dll": ""}}
@@ -557,12 +512,12 @@ macos.debug = {{"res://bin/libcortex.macos.template_debug.universal.dylib": ""}}
 macos.release = {{"res://bin/libcortex.macos.template_release.universal.dylib": ""}}
 '''
 
-    path = game_path / 'bin' / f'{game_name}.gdextension'
+    path = project_path / 'bin' / f'{project_name}.gdextension'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
-def write_cortex_gdextension(game_path: Path):
+def write_cortex_gdextension(project_path: Path):
     """Generate the cortex.gdextension file."""
     content = '''[configuration]
 entry_symbol = "cortex_library_init"
@@ -577,163 +532,111 @@ macos.debug = "res://bin/libcortex.macos.template_debug.universal.dylib"
 macos.release = "res://bin/libcortex.macos.template_release.universal.dylib"
 '''
 
-    path = game_path / 'bin' / 'cortex.gdextension'
-    path.write_text(content)
-    print(f"  Created: {path}")
-
-
-def write_gitignore(game_path: Path, game_name: str):
-    """Generate .gitignore for the game extension folder."""
-    content = '''# Build artifacts
-obj/
-*.obj
-*.o
-*.pdb
-*.ilk
-*.exp
-*.lib
-
-# Visual Studio
-.vs/
-*.suo
-*.user
-*.ncb
-*.sdf
-*.opensdf
-*.VC.db
-*.VC.VC.opendb
-
-# SCons
-.sconsign.dblite
-*.pyc
-'''
-
-    path = game_path / game_name / '.gitignore'
+    path = project_path / 'bin' / 'cortex.gdextension'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Create a new game project using CortexFramework',
+        description='Add CortexFramework C++ support to a Godot project',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-    python tools/create_game.py                     # Interactive mode
-    python tools/create_game.py mygame              # Name only, select project
-    python tools/create_game.py C:/Games/MyGame mygame  # Full specification
+    python tools/create_game.py                  # Interactive
+    python tools/create_game.py C:/Games/MyGame  # Specify path
         '''
     )
 
-    parser.add_argument('args', nargs='*', help='[game_path] game_name')
+    parser.add_argument('project_path', nargs='?', help='Path to Godot project')
 
     args = parser.parse_args()
     cortex_path = get_cortex_path()
 
     print()
     print("=" * 60)
-    print("  CortexFramework Game Project Generator")
+    print("  CortexFramework - Add C++ to Godot Project")
     print("=" * 60)
     print(f"  Cortex: {cortex_path}")
     print()
 
-    # Parse arguments
-    game_path = None
-    game_name = None
-
-    if len(args.args) == 0:
-        # Full interactive mode
-        pass
-    elif len(args.args) == 1:
-        # Just name provided, will select project
-        game_name = args.args[0].lower().replace('-', '_').replace(' ', '_')
+    # Get project path
+    if args.project_path:
+        project_path = Path(args.project_path).absolute()
     else:
-        # Path and name provided
-        game_path = Path(args.args[0]).absolute()
-        game_name = args.args[1].lower().replace('-', '_').replace(' ', '_')
-
-    # Find and select Godot project if not specified
-    if game_path is None:
         print("Scanning for Godot projects...")
         projects = find_godot_projects()
-        game_path = select_godot_project(projects)
+        project_path = select_godot_project(projects)
 
-        if game_path is None:
+        if project_path is None:
             print("No project selected. Exiting.")
             sys.exit(1)
 
-    # Get game name if not specified
-    if game_name is None:
-        game_name = get_game_name()
-
-    # Validate
-    if not game_name.isidentifier():
-        print(f"Error: '{game_name}' is not a valid identifier.")
-        sys.exit(1)
-
+    # Derive project name from folder
+    project_name = get_project_name(project_path)
     project_guid = generate_uuid()
 
     print()
     print("-" * 60)
-    print(f"  Project Path: {game_path}")
-    print(f"  Game Name:    {game_name}")
-    print(f"  Cortex Path:  {cortex_path}")
+    print(f"  Project:  {project_path}")
+    print(f"  Name:     {project_name}")
     print("-" * 60)
     print()
 
-    # Confirm
-    confirm = input("Create project? [Y/n]: ").strip().lower()
-    if confirm and confirm != 'y':
-        print("Cancelled.")
-        sys.exit(0)
+    # Check if already set up
+    if (project_path / 'SConstruct').exists():
+        print("WARNING: SConstruct already exists!")
+        confirm = input("Overwrite existing files? [y/N]: ").strip().lower()
+        if confirm != 'y':
+            print("Cancelled.")
+            sys.exit(0)
+    else:
+        confirm = input("Add C++ support? [Y/n]: ").strip().lower()
+        if confirm and confirm != 'y':
+            print("Cancelled.")
+            sys.exit(0)
 
     print()
-    print("Creating project structure...")
-    create_directory_structure(game_path, game_name)
-
-    print()
-    print("Generating files...")
-    write_sconstruct(game_path, game_name, cortex_path)
-    write_register_types_h(game_path, game_name)
-    write_register_types_cpp(game_path, game_name)
-    write_example_context(game_path, game_name)
-    write_vcxproj(game_path, game_name, cortex_path, project_guid)
-    write_sln(game_path, game_name, project_guid)
-    write_gdextension(game_path, game_name)
-    write_cortex_gdextension(game_path)
-    write_gitignore(game_path, game_name)
+    print("Creating files...")
+    create_directory_structure(project_path)
+    write_sconstruct(project_path, project_name, cortex_path)
+    write_register_types_h(project_path, project_name)
+    write_register_types_cpp(project_path, project_name)
+    write_example_context(project_path, project_name)
+    write_vcxproj(project_path, project_name, cortex_path, project_guid)
+    write_sln(project_path, project_name, project_guid)
+    write_gdextension(project_path, project_name)
+    write_cortex_gdextension(project_path)
 
     print()
     print("=" * 60)
-    print(f"  SUCCESS! Game project '{game_name}' created.")
+    print("  SUCCESS!")
     print("=" * 60)
     print(f'''
-  Project structure:
-    {game_path}/
-        {game_name}.sln              <- Open in Visual Studio
-        {game_name}/
-            src/
-                register_types.cpp
-                start_button_context.h
-            SConstruct
-            {game_name}.vcxproj
-        bin/
-            {game_name}.gdextension
-            cortex.gdextension
+  Created in {project_path}:
+    {project_name}.sln       <- Open in Visual Studio
+    {project_name}.vcxproj
+    SConstruct
+    src/
+        register_types.cpp
+        register_types.h
+        start_button_context.h
+    bin/
+        {project_name}.gdextension
+        cortex.gdextension
 
   Next steps:
 
-  1. Build Cortex (if not already):
+  1. Build Cortex (if needed):
      cd {cortex_path}
      scons
 
-  2. Build your game (choose one):
-     - Visual Studio: Open {game_path / f'{game_name}.sln'} and build (F7)
-     - Command line:  cd {game_path / game_name} && scons
+  2. Build your game:
+     Open {project_name}.sln in Visual Studio and press F7
+     -or-
+     cd {project_path} && scons
 
-  3. Open your Godot project - extensions load automatically!
-
-  4. Add custom contexts in {game_path / game_name / 'src'}
+  3. Run Godot - extensions load automatically!
 ''')
 
 
