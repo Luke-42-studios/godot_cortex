@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-CortexFramework Game Project Generator
+Cortex CLI Tool
 
-Adds Cortex C++ extension support to an existing Godot project.
-Creates src/, SConstruct, and VS solution files in the project root.
+Adds CortexFramework C++ extension support to an existing Godot project.
+Creates Visual Studio solution, source files, and registers GDExtensions.
 
 Usage:
-    python tools/create_game.py                    # Interactive - select project
-    python tools/create_game.py <godot_project>    # Specify project path
+    python tools/cortex.py                    # Interactive - select project
+    python tools/cortex.py <godot_project>    # Specify project path
 
 Example:
-    python tools/create_game.py
-    python tools/create_game.py C:/Games/MyGame
+    python tools/cortex.py
+    python tools/cortex.py C:/Games/MyGame
 """
 
 import os
@@ -118,10 +118,8 @@ def select_godot_project(projects):
 def get_project_name(project_path: Path):
     """Derive extension name from project folder name."""
     name = project_path.name.lower()
-    # Clean up the name for C++ identifier
     name = ''.join(c if c.isalnum() or c == '_' else '_' for c in name)
     name = name.strip('_')
-    # Ensure it starts with a letter
     if name and name[0].isdigit():
         name = 'game_' + name
     return name or 'game'
@@ -131,7 +129,8 @@ def create_directory_structure(project_path: Path):
     """Create the project directory structure."""
     dirs = [
         project_path / 'src',
-        project_path / 'bin',
+        project_path / 'bin',         # DLLs go here
+        project_path / 'extensions',  # .gdextension files go here
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -188,7 +187,7 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.template_debug.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.debug.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>DEBUG_ENABLED;DEBUG_METHODS_ENABLED;WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;_DEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
@@ -199,7 +198,7 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_release</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_release</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.template_release.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.release.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;NDEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
@@ -225,7 +224,6 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
 
 def write_sln(project_path: Path, project_name: str, project_guid: str, cortex_path: Path):
     """Generate the Visual Studio solution file with both game and Cortex projects."""
-    # Cortex project GUID (must match cortex.vcxproj)
     cortex_guid = '{8A2E8F5A-0C3D-4F1E-9B5A-1234567890AB}'
     cortex_vcxproj = cortex_path / 'cortex.vcxproj'
 
@@ -269,16 +267,17 @@ def write_sconstruct(project_path: Path, project_name: str, cortex_path: Path):
 """
 SConstruct - Build script for {project_name}
 
-This game project links against CortexFramework.
+This game project compiles Cortex sources directly into a single DLL.
+This avoids cross-extension inheritance issues.
 """
 
 import os
 import sys
-import shutil
 
 # Path to Cortex framework
 cortex_path = r'{cortex_path}'
 godot_cpp_path = os.path.join(cortex_path, 'godot-cpp')
+flecs_dir = os.path.join(cortex_path, 'flecs')
 
 # Add godot-cpp to the build environment
 env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
@@ -291,11 +290,8 @@ src_dir = 'src'
 env.Append(CPPPATH=[
     src_dir,
     os.path.join(cortex_path, 'src'),
-    os.path.join(cortex_path, 'flecs', 'include'),
+    os.path.join(flecs_dir, 'include'),
 ])
-
-# Link against Cortex library
-env.Append(LIBPATH=[os.path.join(cortex_path, 'lib')])
 
 # C++20 for Clay UI compatibility
 if env['platform'] == 'windows':
@@ -303,32 +299,44 @@ if env['platform'] == 'windows':
 else:
     env.Append(CXXFLAGS=['-std=c++20'])
 
-# Collect source files
+# Collect game source files
 sources = Glob(os.path.join(src_dir, '*.cpp'))
 sources += Glob(os.path.join(src_dir, '*.c'))
+
+# Include Cortex source files directly (single DLL approach)
+cortex_src_dir = os.path.join(cortex_path, 'src')
+sources += Glob(os.path.join(cortex_src_dir, '*.cpp'))
+sources += Glob(os.path.join(cortex_src_dir, '*.c'))
+
+# Include Flecs source files
+flecs_src_dir = os.path.join(flecs_dir, 'src')
+for root, dirs, files in os.walk(flecs_src_dir):
+    for f in files:
+        if f.endswith('.c'):
+            sources.append(os.path.join(root, f))
+
+# Flecs configuration - build as static embedded in our DLL
+env.Append(CPPDEFINES=['flecs_STATIC'])
 
 # Output configuration
 output_dir = 'bin'
 
+# Map SCons target to simple name (template_debug -> debug)
+target_name = env['target'].replace('template_', '')
+
 # Platform-specific settings
 if env['platform'] == 'windows':
     lib_suffix = '.dll'
-    cortex_lib = 'libcortex.{{}}.{{}}.{{}}'.format(env['platform'], env['target'], env['arch'])
 elif env['platform'] == 'macos':
     lib_suffix = '.dylib'
-    cortex_lib = 'cortex.{{}}.{{}}.{{}}'.format(env['platform'], env['target'], env['arch'])
 else:
     lib_suffix = '.so'
-    cortex_lib = 'cortex.{{}}.{{}}.{{}}'.format(env['platform'], env['target'], env['arch'])
 
-# Link against Cortex
-env.Append(LIBS=[cortex_lib])
-
-# Library name
+# Library name (without template_ prefix)
 library_name = 'lib{{}}.{{}}.{{}}.{{}}{{}}'.format(
     project_name,
     env['platform'],
-    env['target'],
+    target_name,
     env['arch'],
     lib_suffix
 )
@@ -343,27 +351,6 @@ library = env.SharedLibrary(
 
 Default(library)
 
-# Copy Cortex library to bin/ after build
-def copy_cortex_lib(target, source, env):
-    cortex_lib_dir = os.path.join(cortex_path, 'lib')
-    bin_dir = os.path.abspath(output_dir)
-    os.makedirs(bin_dir, exist_ok=True)
-
-    if os.path.exists(cortex_lib_dir):
-        for f in os.listdir(cortex_lib_dir):
-            if f.startswith('libcortex.') and env['platform'] in f and env['target'] in f:
-                src = os.path.join(cortex_lib_dir, f)
-                dst = os.path.join(bin_dir, f)
-                print(f"Copying Cortex: {{src}} -> {{dst}}")
-                shutil.copy2(src, dst)
-                if f.endswith('.dll'):
-                    pdb = src.replace('.dll', '.pdb')
-                    if os.path.exists(pdb):
-                        shutil.copy2(pdb, os.path.join(bin_dir, os.path.basename(pdb)))
-
-copy_cortex = env.Command('copy_cortex', library, copy_cortex_lib)
-Default(copy_cortex)
-
 Help("""
 {project_name} - CortexFramework Game
 =====================================
@@ -373,6 +360,8 @@ Build:
     scons target=template_release   # Release build
 
 Or open {project_name}.sln in Visual Studio and build (F7)
+
+Note: Cortex framework is compiled directly into this DLL (single extension).
 """)
 '''
 
@@ -410,6 +399,10 @@ def write_register_types_cpp(project_path: Path, project_name: str):
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
+
+// Cortex framework initialization helper
+#include "cortex_init.h"
 
 // Game contexts
 #include "start_button_context.h"
@@ -421,14 +414,22 @@ void initialize_{project_name}_module(ModuleInitializationLevel p_level) {{
         return;
     }}
 
+    // Register Cortex framework classes
+    cortex_register_classes();
+
     // Register game contexts
-    ClassDB::register_class<{class_prefix}StartButtonContext>();
+    GDREGISTER_CLASS({class_prefix}StartButtonContext);
+
+    UtilityFunctions::print("[{class_prefix}] Extension loaded successfully!");
 }}
 
 void uninitialize_{project_name}_module(ModuleInitializationLevel p_level) {{
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {{
         return;
     }}
+
+    // Cleanup Cortex
+    cortex_unregister_classes();
 }}
 
 extern "C" {{
@@ -466,7 +467,7 @@ def write_example_context(project_path: Path, project_name: str):
 #include <godot_cpp/classes/scene_tree.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-using namespace godot;
+namespace godot {{
 
 class {class_prefix}StartButtonContext : public ClayButtonContext {{
     GDCLASS({class_prefix}StartButtonContext, ClayButtonContext);
@@ -475,17 +476,20 @@ class {class_prefix}StartButtonContext : public ClayButtonContext {{
 
 protected:
     static void _bind_methods() {{
-        GD_BIND_PROPERTY({class_prefix}StartButtonContext, game_scene);
+        GD_BIND_PROPERTY({class_prefix}StartButtonContext, String, game_scene);
     }}
 
 public:
+    {class_prefix}StartButtonContext() {{}}
+    ~{class_prefix}StartButtonContext() {{}}
+
     void on_pressed() override {{
         UtilityFunctions::print("[{class_prefix}] Button pressed!");
 
         // Change scene example:
         // ClayButtonNode* btn = get_node<ClayButtonNode>();
-        // if (btn && !game_scene.is_empty()) {{
-        //     btn->get_tree()->change_scene_to_file(game_scene);
+        // if (btn && !_game_scene.is_empty()) {{
+        //     btn->get_tree()->change_scene_to_file(_game_scene);
         // }}
     }}
 
@@ -493,6 +497,8 @@ public:
         UtilityFunctions::print("[{class_prefix}] Hover");
     }}
 }};
+
+}} // namespace godot
 
 #endif
 '''
@@ -503,61 +509,43 @@ public:
 
 
 def write_gdextension(project_path: Path, project_name: str):
-    """Generate the .gdextension file for the game."""
+    """Generate the .gdextension file for the game in extensions folder.
+
+    Single DLL approach - Cortex is compiled into the game DLL, no dependencies.
+    """
     content = f'''[configuration]
 entry_symbol = "{project_name}_library_init"
 compatibility_minimum = "4.2"
 
 [libraries]
-windows.debug.x86_64 = "res://bin/lib{project_name}.windows.template_debug.x86_64.dll"
-windows.release.x86_64 = "res://bin/lib{project_name}.windows.template_release.x86_64.dll"
-linux.debug.x86_64 = "res://bin/lib{project_name}.linux.template_debug.x86_64.so"
-linux.release.x86_64 = "res://bin/lib{project_name}.linux.template_release.x86_64.so"
-macos.debug = "res://bin/lib{project_name}.macos.template_debug.universal.dylib"
-macos.release = "res://bin/lib{project_name}.macos.template_release.universal.dylib"
-
-[dependencies]
-windows.debug.x86_64 = {{"res://bin/libcortex.windows.template_debug.x86_64.dll": ""}}
-windows.release.x86_64 = {{"res://bin/libcortex.windows.template_release.x86_64.dll": ""}}
-linux.debug.x86_64 = {{"res://bin/libcortex.linux.template_debug.x86_64.so": ""}}
-linux.release.x86_64 = {{"res://bin/libcortex.linux.template_release.x86_64.so": ""}}
-macos.debug = {{"res://bin/libcortex.macos.template_debug.universal.dylib": ""}}
-macos.release = {{"res://bin/libcortex.macos.template_release.universal.dylib": ""}}
+windows.debug.x86_64 = "res://bin/lib{project_name}.windows.debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/lib{project_name}.windows.release.x86_64.dll"
+linux.debug.x86_64 = "res://bin/lib{project_name}.linux.debug.x86_64.so"
+linux.release.x86_64 = "res://bin/lib{project_name}.linux.release.x86_64.so"
+macos.debug = "res://bin/lib{project_name}.macos.debug.universal.dylib"
+macos.release = "res://bin/lib{project_name}.macos.release.universal.dylib"
 '''
 
-    path = project_path / 'bin' / f'{project_name}.gdextension'
-    path.write_text(content)
-    print(f"  Created: {path}")
-
-
-def write_cortex_gdextension(project_path: Path):
-    """Generate the cortex.gdextension file."""
-    content = '''[configuration]
-entry_symbol = "cortex_library_init"
-compatibility_minimum = "4.2"
-
-[libraries]
-windows.debug.x86_64 = "res://bin/libcortex.windows.template_debug.x86_64.dll"
-windows.release.x86_64 = "res://bin/libcortex.windows.template_release.x86_64.dll"
-linux.debug.x86_64 = "res://bin/libcortex.linux.template_debug.x86_64.so"
-linux.release.x86_64 = "res://bin/libcortex.linux.template_release.x86_64.so"
-macos.debug = "res://bin/libcortex.macos.template_debug.universal.dylib"
-macos.release = "res://bin/libcortex.macos.template_release.universal.dylib"
-'''
-
-    path = project_path / 'bin' / 'cortex.gdextension'
+    # Place .gdextension in extensions folder
+    path = project_path / 'extensions' / f'{project_name}.gdextension'
     path.write_text(content)
     print(f"  Created: {path}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Add CortexFramework C++ support to a Godot project',
+        description='Cortex CLI - Add C++ extension support to a Godot project',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-    python tools/create_game.py                  # Interactive
-    python tools/create_game.py C:/Games/MyGame  # Specify path
+    python tools/cortex.py                  # Interactive - select from found projects
+    python tools/cortex.py C:/Games/MyGame  # Specify project path directly
+
+What this tool does:
+    1. Creates src/ folder with starter C++ files
+    2. Creates Visual Studio solution (includes Cortex for debugging)
+    3. Adds .gdextension files so Godot loads the extensions
+    4. Sets up SConstruct for building with SCons
         '''
     )
 
@@ -568,9 +556,9 @@ Examples:
 
     print()
     print("=" * 60)
-    print("  CortexFramework - Add C++ to Godot Project")
+    print("  Cortex - Add C++ Extensions to Godot Project")
     print("=" * 60)
-    print(f"  Cortex: {cortex_path}")
+    print(f"  Cortex Framework: {cortex_path}")
     print()
 
     # Get project path
@@ -585,6 +573,15 @@ Examples:
             print("No project selected. Exiting.")
             sys.exit(1)
 
+    # Verify it's a Godot project
+    if not (project_path / 'project.godot').exists() and not (project_path / '.godot').exists():
+        print(f"\nWARNING: No project.godot found in {project_path}")
+        print("This may not be a Godot project.")
+        confirm = input("Continue anyway? [y/N]: ").strip().lower()
+        if confirm != 'y':
+            print("Cancelled.")
+            sys.exit(0)
+
     # Derive project name from folder
     project_name = get_project_name(project_path)
     project_guid = generate_uuid()
@@ -598,13 +595,13 @@ Examples:
 
     # Check if already set up
     if (project_path / 'SConstruct').exists():
-        print("WARNING: SConstruct already exists!")
+        print("WARNING: This project already has C++ support!")
         confirm = input("Overwrite existing files? [y/N]: ").strip().lower()
         if confirm != 'y':
             print("Cancelled.")
             sys.exit(0)
     else:
-        confirm = input("Add C++ support? [Y/n]: ").strip().lower()
+        confirm = input("Add C++ extension support? [Y/n]: ").strip().lower()
         if confirm and confirm != 'y':
             print("Cancelled.")
             sys.exit(0)
@@ -619,41 +616,42 @@ Examples:
     write_vcxproj(project_path, project_name, cortex_path, project_guid)
     write_sln(project_path, project_name, project_guid, cortex_path)
     write_gdextension(project_path, project_name)
-    write_cortex_gdextension(project_path)
 
     print()
     print("=" * 60)
     print("  SUCCESS!")
     print("=" * 60)
     print(f'''
-  Created in {project_path}:
-    {project_name}.sln       <- Open in Visual Studio (includes Cortex!)
+  Files created in {project_path}:
+
+    {project_name}.sln              <- Open in Visual Studio
     {project_name}.vcxproj
     SConstruct
     src/
         register_types.cpp
         register_types.h
-        start_button_context.h
-    bin/
+        start_button_context.h      <- Example context
+    bin/                            <- Single DLL goes here after build
+    extensions/                     <- .gdextension file
         {project_name}.gdextension
-        cortex.gdextension
 
   Solution contains:
-    - {project_name}  (your game - set as startup project)
-    - cortex          (framework - builds first, debuggable)
+    - {project_name}  (your game code)
+    - cortex          (framework - editable & debuggable)
 
   Next steps:
 
   1. Open {project_name}.sln in Visual Studio
 
-  2. Build solution (F7) - builds Cortex first, then your game
+  2. Build solution (F7)
+     - Builds Cortex first, then your game
+     - Copies all DLLs to bin/
 
-  3. To debug:
-     - Set breakpoints in Cortex or game code
-     - Debug > Attach to Process > select Godot
-     - Or configure Godot as the debug executable
+  3. Open project in Godot
+     - Extensions load automatically from extensions/ folder
+     - Your custom contexts appear in the editor
 
-  4. Run Godot - extensions load automatically!
+  4. To debug: Debug > Attach to Process > Godot
 ''')
 
 

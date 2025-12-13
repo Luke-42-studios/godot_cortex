@@ -119,8 +119,8 @@ Dictionary FlecsWorld::get_world_info() const {
 
     info_dict["table_create_total"] = (int64_t)info->table_create_total;
     info_dict["table_delete_total"] = (int64_t)info->table_delete_total;
-    info_dict["systems_ran"] = (int64_t)info->systems_ran_frame;
-    info_dict["observers_ran"] = (int64_t)info->observers_ran_frame;
+    info_dict["systems_ran"] = (int64_t)info->systems_ran_total;
+    info_dict["observers_ran"] = (int64_t)info->observers_ran_total;
     info_dict["frame_count"] = (int64_t)info->frame_count_total;
     info_dict["world_time"] = info->world_time_total;
     info_dict["delta_time"] = (double)info->delta_time;

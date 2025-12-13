@@ -67,12 +67,15 @@ elif env['platform'] == 'macos':
 else:
     lib_suffix = '.so'
 
+# Map SCons target to simple name (template_debug -> debug)
+target_name = env['target'].replace('template_', '')
+
 # Library naming convention
-# e.g., libcortex.windows.template_debug.x86_64.dll
+# e.g., libcortex.windows.debug.x86_64.dll
 library_name = 'lib{}.{}.{}.{}{}'.format(
     project_name,
     env['platform'],
-    env['target'],
+    target_name,
     env['arch'],
     lib_suffix
 )
@@ -130,5 +133,5 @@ Output:
     lib/                Contains the built Cortex library (for linking)
     demo/bin/           Contains a copy for standalone demo testing
 
-For game projects, use: python tools/create_game.py <path> <name>
+For game projects, use: python tools/cortex.py
 """)

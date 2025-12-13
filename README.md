@@ -235,18 +235,18 @@ GD_BIND_CONTEXT(MyNode, MyContext, context);
 
 ### Adding C++ to a Godot Project
 
-Use the project generator to add CortexFramework support to any Godot project:
+Use the Cortex CLI tool to add C++ extension support to any Godot project:
 
 ```bash
 cd cortex
-python tools/create_game.py
+python tools/cortex.py
 ```
 
 This will:
 1. Scan for Godot projects and let you select one
-2. Generate a Visual Studio solution with both your game and Cortex
+2. Generate a Visual Studio solution (includes Cortex for debugging)
 3. Create starter source files in `src/`
-4. Set up `.gdextension` files in `bin/`
+4. Add `.gdextension` files so Godot loads extensions automatically
 
 **Generated structure in your Godot project:**
 ```
@@ -258,7 +258,8 @@ MyGame/
         register_types.cpp
         register_types.h
         start_button_context.h   <- Example context
-    bin/
+    bin/                     <- DLLs go here after build
+    extensions/              <- .gdextension files
         my_game.gdextension
         cortex.gdextension
     project.godot            (existing)
@@ -324,7 +325,7 @@ cortex/
 │   ├── flecs_world.h/cpp       # Flecs ECS singleton
 │   └── register_types.cpp      # Class registration
 ├── tools/
-│   └── create_game.py          # Game project generator
+│   └── cortex.py               # CLI tool to add C++ to Godot projects
 ├── flecs/                      # Flecs ECS library (submodule)
 ├── godot-cpp/                  # Godot C++ bindings (submodule)
 ├── lib/                        # Built Cortex library

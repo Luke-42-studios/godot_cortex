@@ -20,6 +20,7 @@ class NodeContext : public Resource {
     GDCLASS(NodeContext, Resource);
 
 protected:
+    // Raw pointer - NOT saved/serialized. Set at runtime by owner node.
     Node* owner = nullptr;
 
     static void _bind_methods() {
