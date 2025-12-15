@@ -5,8 +5,9 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-#include "system/ecs_context.h"
-#include "system/node_watcher.h"
+#include "system/PECSContext.h"
+#include "system/SNodeWatcher.h"
+#include "node/CNode.h"
 
 namespace godot {
 
@@ -20,16 +21,20 @@ namespace godot {
 inline void polaris_register_classes() {
     // Register core ECS systems first (dependencies)
     GDREGISTER_CLASS(PECSContext);
-    GDREGISTER_CLASS(NodeWatcher);
-        
+    GDREGISTER_CLASS(SNodeWatcher);
+
+    // Register node system - Context must be registered before CNode
+    GDREGISTER_CLASS(Context);
+    GDREGISTER_CLASS(CNode);
+
     UtilityFunctions::print("[Polaris] Framework classes registered");
 
     // PERF: Singleton creation order matters - create dependencies first
     // Create the global ECS context instance (HOT: singleton lifetime management)
     PECSContext::create_global_instance();
 
-    // Create NodeWatcher as a supporting service
-    NodeWatcher::create_global_instance();
+    // Create SNodeWatcher as a supporting service
+    SNodeWatcher::create_global_instance();
 }
 
 // ============================================================================
@@ -37,9 +42,9 @@ inline void polaris_register_classes() {
 // ============================================================================
 inline void polaris_unregister_classes() {
     PECSContext::destroy_global_instance();
-    NodeWatcher::destroy_global_instance();
+    SNodeWatcher::destroy_global_instance();
 }
 
-} // namespace godot`
+} // namespace godot
 
 #endif // POLARIS_INIT_H

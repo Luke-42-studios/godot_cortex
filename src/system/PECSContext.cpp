@@ -1,5 +1,5 @@
 // ECSWorldSystem.cpp - Enhanced implementation with performance optimizations
-#include "ecs_context.h"
+#include "PECSContext.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/engine.hpp>
 
