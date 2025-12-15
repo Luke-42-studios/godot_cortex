@@ -3,20 +3,23 @@
 Cortex CLI Tool
 
 Adds CortexFramework C++ extension support to an existing Godot project.
-Creates Visual Studio solution, source files, and registers GDExtensions.
+Creates VS Code workspace configuration, source files, and registers GDExtensions.
 
 Usage:
     python tools/cortex.py                    # Interactive - select project
     python tools/cortex.py <godot_project>    # Specify project path
+    python tools/cortex.py --godot-path PATH  # Specify Godot engine path
 
 Example:
     python tools/cortex.py
     python tools/cortex.py C:/Games/MyGame
+    python tools/cortex.py C:/Games/MyGame --godot-path C:/Workspace/Godot/engine
 """
 
 import os
 import sys
 import uuid
+import json
 import argparse
 from pathlib import Path
 
@@ -123,6 +126,281 @@ def get_project_name(project_path: Path):
     if name and name[0].isdigit():
         name = 'game_' + name
     return name or 'game'
+
+
+def find_godot_engine(search_paths=None):
+    """Find Godot engine directory by looking for SConstruct and editor executable."""
+    if search_paths is None:
+        # Default search paths
+        cortex_path = get_cortex_path()
+        search_paths = [
+            cortex_path.parent / 'engine',       # Sibling 'engine' folder
+            cortex_path.parent / 'godot',        # Sibling 'godot' folder
+            Path.home() / 'Godot' / 'engine',
+            Path('C:/Godot/engine'),
+            Path('C:/Workspace/Godot/engine'),
+        ]
+
+    for path in search_paths:
+        if path.exists() and (path / 'SConstruct').exists():
+            # Verify it's the engine by checking for core folder
+            if (path / 'core').exists() or (path / 'editor').exists():
+                return path.absolute()
+
+    return None
+
+
+def find_godot_executable(engine_path: Path):
+    """Find the Godot editor executable in the engine bin folder."""
+    bin_path = engine_path / 'bin'
+    if not bin_path.exists():
+        return None
+
+    # Look for editor executables (prefer debug builds)
+    patterns = [
+        'godot.windows.editor.dev.x86_64.exe',
+        'godot.windows.editor.x86_64.exe',
+        'godot.windows.editor.dev.x86_64.console.exe',
+        'godot.windows.editor.x86_64.console.exe',
+        'godot.linuxbsd.editor.dev.x86_64',
+        'godot.linuxbsd.editor.x86_64',
+        'godot.macos.editor.dev.universal',
+        'godot.macos.editor.universal',
+    ]
+
+    for pattern in patterns:
+        exe = bin_path / pattern
+        if exe.exists():
+            return exe
+
+    # Fallback: find any editor executable
+    import glob
+    for exe in bin_path.glob('godot*editor*'):
+        if exe.is_file():
+            return exe
+
+    return None
+
+
+def write_vscode_tasks(project_path: Path, project_name: str):
+    """Generate VS Code tasks.json for building the extension."""
+    vscode_dir = project_path / '.vscode'
+    vscode_dir.mkdir(exist_ok=True)
+
+    tasks = {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "build_debug",
+                "type": "shell",
+                "command": "scons",
+                "args": ["platform=windows", "target=template_debug", "debug_symbols=yes"],
+                "group": {
+                    "kind": "build",
+                    "isDefault": True
+                },
+                "problemMatcher": "$msCompile",
+                "detail": "Build GDExtension DLL (debug with symbols)"
+            },
+            {
+                "label": "build_release",
+                "type": "shell",
+                "command": "scons",
+                "args": ["platform=windows", "target=template_release"],
+                "group": "build",
+                "problemMatcher": "$msCompile",
+                "detail": "Build GDExtension DLL (release)"
+            },
+            {
+                "label": "clean",
+                "type": "shell",
+                "command": "scons",
+                "args": ["-c"],
+                "group": "build",
+                "problemMatcher": [],
+                "detail": "Clean build artifacts"
+            },
+            {
+                "label": "rebuild_debug",
+                "type": "shell",
+                "command": "scons",
+                "args": ["-c"],
+                "group": "build",
+                "problemMatcher": "$msCompile",
+                "detail": "Clean and rebuild debug",
+                "dependsOn": ["clean"],
+                "dependsOrder": "sequence"
+            }
+        ]
+    }
+
+    # Add second part of rebuild task
+    tasks["tasks"].append({
+        "label": "rebuild_debug",
+        "type": "shell",
+        "command": "scons",
+        "args": ["platform=windows", "target=template_debug", "debug_symbols=yes"],
+        "group": "build",
+        "problemMatcher": "$msCompile",
+        "dependsOn": ["clean"],
+        "dependsOrder": "sequence"
+    })
+
+    # Remove duplicate rebuild_debug and fix it
+    tasks["tasks"] = [t for t in tasks["tasks"] if t["label"] != "rebuild_debug"]
+    tasks["tasks"].append({
+        "label": "rebuild_debug",
+        "dependsOn": ["clean", "build_debug"],
+        "dependsOrder": "sequence",
+        "group": "build",
+        "problemMatcher": []
+    })
+
+    path = vscode_dir / 'tasks.json'
+    path.write_text(json.dumps(tasks, indent=4))
+    print(f"  Created: {path}")
+
+
+def write_vscode_launch(project_path: Path, project_name: str, godot_exe: Path):
+    """Generate VS Code launch.json for debugging."""
+    vscode_dir = project_path / '.vscode'
+    vscode_dir.mkdir(exist_ok=True)
+
+    # Convert to forward slashes for JSON
+    godot_exe_str = str(godot_exe).replace('\\', '/')
+    project_path_str = str(project_path).replace('\\', '/')
+
+    launch = {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Build & Launch Godot Editor",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": godot_exe_str,
+                "args": ["--editor", "--path", project_path_str],
+                "preLaunchTask": "build_debug",
+                "stopAtEntry": False,
+                "cwd": project_path_str,
+                "environment": [],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Build Only (Hot Reload)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": godot_exe_str,
+                "args": ["--version"],
+                "preLaunchTask": "build_debug",
+                "stopAtEntry": False,
+                "cwd": project_path_str,
+                "environment": [],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Launch Godot Editor (no build)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": godot_exe_str,
+                "args": ["--editor", "--path", project_path_str],
+                "stopAtEntry": False,
+                "cwd": project_path_str,
+                "environment": [],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Launch Game (debug)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": godot_exe_str,
+                "args": ["--path", project_path_str],
+                "preLaunchTask": "build_debug",
+                "stopAtEntry": False,
+                "cwd": project_path_str,
+                "environment": [],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Attach to Godot",
+                "type": "cppvsdbg",
+                "request": "attach",
+                "processId": "${command:pickProcess}"
+            }
+        ]
+    }
+
+    path = vscode_dir / 'launch.json'
+    path.write_text(json.dumps(launch, indent=4))
+    print(f"  Created: {path}")
+
+
+def write_vscode_cpp_properties(project_path: Path, project_name: str, cortex_path: Path):
+    """Generate VS Code c_cpp_properties.json for IntelliSense."""
+    vscode_dir = project_path / '.vscode'
+    vscode_dir.mkdir(exist_ok=True)
+
+    # Convert paths to forward slashes
+    cortex_str = str(cortex_path).replace('\\', '/')
+    project_str = str(project_path).replace('\\', '/')
+
+    properties = {
+        "configurations": [
+            {
+                "name": "Win32",
+                "includePath": [
+                    f"{project_str}/src",
+                    f"{cortex_str}/src",
+                    f"{cortex_str}/godot-cpp/include",
+                    f"{cortex_str}/godot-cpp/gen/include",
+                    f"{cortex_str}/godot-cpp/gdextension",
+                    f"{cortex_str}/flecs/include"
+                ],
+                "defines": [
+                    "DEBUG_ENABLED",
+                    "DEBUG_METHODS_ENABLED",
+                    "WINDOWS_ENABLED",
+                    "TYPED_METHOD_BIND",
+                    "WIN32",
+                    "_DEBUG"
+                ],
+                "windowsSdkVersion": "10.0.22621.0",
+                "compilerPath": "cl.exe",
+                "cStandard": "c17",
+                "cppStandard": "c++20",
+                "intelliSenseMode": "windows-msvc-x64"
+            }
+        ],
+        "version": 4
+    }
+
+    path = vscode_dir / 'c_cpp_properties.json'
+    path.write_text(json.dumps(properties, indent=4))
+    print(f"  Created: {path}")
+
+
+def write_vscode_settings(project_path: Path):
+    """Generate VS Code settings.json with helpful defaults."""
+    vscode_dir = project_path / '.vscode'
+    vscode_dir.mkdir(exist_ok=True)
+
+    settings = {
+        "files.associations": {
+            "*.gdextension": "ini",
+            "SConstruct": "python",
+            "*.h": "cpp",
+            "*.hpp": "cpp"
+        },
+        "C_Cpp.default.cppStandard": "c++20",
+        "editor.formatOnSave": True
+    }
+
+    path = vscode_dir / 'settings.json'
+    # Only create if doesn't exist to not overwrite user settings
+    if not path.exists():
+        path.write_text(json.dumps(settings, indent=4))
+        print(f"  Created: {path}")
+    else:
+        print(f"  Skipped: {path} (already exists)")
 
 
 def create_directory_structure(project_path: Path):
@@ -305,8 +583,10 @@ sources += Glob(os.path.join(src_dir, '*.c'))
 
 # Include Cortex source files directly (single DLL approach)
 cortex_src_dir = os.path.join(cortex_path, 'src')
-sources += Glob(os.path.join(cortex_src_dir, '*.cpp'))
-sources += Glob(os.path.join(cortex_src_dir, '*.c'))
+for root, dirs, files in os.walk(cortex_src_dir):
+    for f in files:
+        if f.endswith('.cpp') or f.endswith('.c'):
+            sources.append(os.path.join(root, f))
 
 # Include Flecs source files
 flecs_src_dir = os.path.join(flecs_dir, 'src')
@@ -540,16 +820,21 @@ def main():
 Examples:
     python tools/cortex.py                  # Interactive - select from found projects
     python tools/cortex.py C:/Games/MyGame  # Specify project path directly
+    python tools/cortex.py --godot-path C:/Workspace/Godot/engine
 
 What this tool does:
     1. Creates src/ folder with starter C++ files
-    2. Creates Visual Studio solution (includes Cortex for debugging)
+    2. Creates VS Code workspace (.vscode/) with:
+       - tasks.json      (build debug/release DLL)
+       - launch.json     (launch Godot editor, attach debugger)
+       - c_cpp_properties.json (IntelliSense)
     3. Adds .gdextension files so Godot loads the extensions
     4. Sets up SConstruct for building with SCons
         '''
     )
 
     parser.add_argument('project_path', nargs='?', help='Path to Godot project')
+    parser.add_argument('--godot-path', '-g', help='Path to Godot engine source (for debugging)')
 
     args = parser.parse_args()
     cortex_path = get_cortex_path()
@@ -584,12 +869,37 @@ What this tool does:
 
     # Derive project name from folder
     project_name = get_project_name(project_path)
-    project_guid = generate_uuid()
+
+    # Find Godot engine path
+    if args.godot_path:
+        godot_engine_path = Path(args.godot_path).absolute()
+    else:
+        print("Searching for Godot engine...")
+        godot_engine_path = find_godot_engine()
+
+    godot_exe = None
+    if godot_engine_path:
+        godot_exe = find_godot_executable(godot_engine_path)
+        if godot_exe:
+            print(f"  Found Godot: {godot_exe}")
+        else:
+            print(f"  Godot engine found at: {godot_engine_path}")
+            print("  WARNING: No editor executable found in bin/")
+            print("  You may need to build Godot first: scons target=editor dev_build=yes")
+    else:
+        print("  WARNING: Godot engine not found.")
+        print("  Use --godot-path to specify the engine location.")
+        godot_path_input = input("  Enter Godot engine path (or press Enter to skip): ").strip()
+        if godot_path_input:
+            godot_engine_path = Path(godot_path_input).absolute()
+            godot_exe = find_godot_executable(godot_engine_path)
 
     print()
     print("-" * 60)
     print(f"  Project:  {project_path}")
     print(f"  Name:     {project_name}")
+    if godot_exe:
+        print(f"  Godot:    {godot_exe}")
     print("-" * 60)
     print()
 
@@ -613,45 +923,76 @@ What this tool does:
     write_register_types_h(project_path, project_name)
     write_register_types_cpp(project_path, project_name)
     write_example_context(project_path, project_name)
-    write_vcxproj(project_path, project_name, cortex_path, project_guid)
-    write_sln(project_path, project_name, project_guid, cortex_path)
     write_gdextension(project_path, project_name)
+
+    # Generate VS Code configuration
+    print()
+    print("Creating VS Code workspace...")
+    write_vscode_tasks(project_path, project_name)
+    write_vscode_cpp_properties(project_path, project_name, cortex_path)
+    write_vscode_settings(project_path)
+
+    if godot_exe:
+        write_vscode_launch(project_path, project_name, godot_exe)
+    else:
+        print("  Skipped: launch.json (no Godot executable found)")
+        print("  Run again with --godot-path after building Godot engine")
 
     print()
     print("=" * 60)
     print("  SUCCESS!")
     print("=" * 60)
+
+    launch_note = ""
+    if godot_exe:
+        launch_note = f"""
+  Debug configurations (F5 in VS Code):
+    - Build & Launch Godot Editor  (builds DLL, launches editor)
+    - Build Only (Hot Reload)      (builds DLL, prints version)
+    - Launch Godot Editor          (no build, just launch)
+    - Launch Game                  (run game directly)
+    - Attach to Godot              (attach to running process)
+"""
+    else:
+        launch_note = """
+  NOTE: launch.json was not created (Godot exe not found).
+  Run the tool again with --godot-path after building the engine.
+"""
+
     print(f'''
   Files created in {project_path}:
 
-    {project_name}.sln              <- Open in Visual Studio
-    {project_name}.vcxproj
-    SConstruct
+    .vscode/
+        tasks.json              <- Build tasks (Ctrl+Shift+B)
+        launch.json             <- Debug configurations (F5)
+        c_cpp_properties.json   <- IntelliSense config
+        settings.json           <- Editor settings
+    SConstruct                  <- SCons build script
     src/
         register_types.cpp
         register_types.h
-        start_button_context.h      <- Example context
-    bin/                            <- Single DLL goes here after build
-    extensions/                     <- .gdextension file
+        start_button_context.h  <- Example context
+    bin/                        <- DLLs go here after build
+    extensions/
         {project_name}.gdextension
-
-  Solution contains:
-    - {project_name}  (your game code)
-    - cortex          (framework - editable & debuggable)
-
+{launch_note}
   Next steps:
 
-  1. Open {project_name}.sln in Visual Studio
+  1. Open folder in VS Code:
+     code "{project_path}"
 
-  2. Build solution (F7)
-     - Builds Cortex first, then your game
-     - Copies all DLLs to bin/
+  2. Build the extension:
+     - Press Ctrl+Shift+B and select "build_debug"
+     - Or run: scons platform=windows target=template_debug
 
-  3. Open project in Godot
-     - Extensions load automatically from extensions/ folder
-     - Your custom contexts appear in the editor
+  3. Debug your extension:
+     - Set breakpoints in your C++ code
+     - Press F5 to build and launch Godot with debugger attached
+     - Or use "Attach to Godot" to attach to a running instance
 
-  4. To debug: Debug > Attach to Process > Godot
+  4. Open project in Godot:
+     - The extension loads automatically from extensions/ folder
+     - Your custom classes appear in the editor
 ''')
 
 
