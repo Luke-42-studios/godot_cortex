@@ -6,7 +6,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include "system/ecs_context.h"
-#include "system/node_watcher_system.h"
+#include "system/node_watcher.h"
 
 namespace godot {
 // ============================================================================
@@ -14,7 +14,7 @@ namespace godot {
 // ============================================================================
 inline void cortex_register_classes() {
     GDREGISTER_CLASS(ECSContext);
-    GDREGISTER_CLASS(NodeWatcherSystem);
+    GDREGISTER_CLASS(NodeWatcher);
         
     UtilityFunctions::print("[Cortex] Framework classes registered");
 
@@ -22,7 +22,7 @@ inline void cortex_register_classes() {
     ECSContext::create_global_instance();
 
     // Create a global instance that lives for the whole engine run‑time.
-    NodeWatcherSystem::create_global_instance();
+    NodeWatcher::create_global_instance();
 }
 
 // ============================================================================
@@ -30,7 +30,7 @@ inline void cortex_register_classes() {
 // ============================================================================
 inline void cortex_unregister_classes() {
     ECSContext::destroy_global_instance();
-    NodeWatcherSystem::destroy_global_instance();
+    NodeWatcher::destroy_global_instance();
 }
 
 } // namespace godot`
