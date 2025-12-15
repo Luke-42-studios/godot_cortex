@@ -156,6 +156,11 @@ void SNodeWatcher::_collect_nodes(Node* root, uint32_t tree_id) {
     m_nodes.push_back(data);
     m_node_index_lookup[root] = index;
 
+    // Notify external listeners for initial collection
+    if (m_on_added_cb) {
+        m_on_added_cb(root, m_nodes.back());
+    }
+
     // RECURSE: Collect children with same optimization approach
     for (int i = 0; i < root->get_child_count(); ++i) {
         _collect_nodes(root->get_child(i), tree_id);
@@ -191,6 +196,11 @@ void SNodeWatcher::_on_node_added(Node* node) {
     m_nodes.push_back(data);
     m_node_index_lookup[node] = m_nodes.size() - 1;
 
+    // Notify external listeners (e.g., CPolaris for ECS entity creation)
+    if (m_on_added_cb) {
+        m_on_added_cb(node, m_nodes.back());
+    }
+
     // DEBUG: Optional tree state update
     if (m_debug_enabled) {
         _on_stack_changed();
@@ -206,6 +216,11 @@ void SNodeWatcher::_on_node_removed(Node* node) {
     auto it = m_node_index_lookup.find(node);
     if (it == m_node_index_lookup.end()) {
         return;  // Not tracked
+    }
+
+    // Notify external listeners BEFORE removal (e.g., CPolaris for ECS entity destruction)
+    if (m_on_removed_cb) {
+        m_on_removed_cb(node);
     }
 
     size_t index = it->second;
