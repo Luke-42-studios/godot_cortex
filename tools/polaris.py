@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Cortex CLI Tool
+Polaris CLI Tool
 
-Adds CortexFramework C++ extension support to an existing Godot project.
+Adds Polaris Framework C++ extension support to an existing Godot project.
 Creates VS Code workspace configuration, source files, and registers GDExtensions.
 
 Usage:
-    python tools/cortex.py                    # Interactive - select project
-    python tools/cortex.py <godot_project>    # Specify project path
-    python tools/cortex.py --godot-path PATH  # Specify Godot engine path
+    python tools/polaris.py                    # Interactive - select project
+    python tools/polaris.py <godot_project>    # Specify project path
+    python tools/polaris.py --godot-path PATH  # Specify Godot engine path
 
 Example:
-    python tools/cortex.py
-    python tools/cortex.py C:/Games/MyGame
-    python tools/cortex.py C:/Games/MyGame --godot-path C:/Workspace/Godot/engine
+    python tools/polaris.py
+    python tools/polaris.py C:/Games/MyGame
+    python tools/polaris.py C:/Games/MyGame --godot-path C:/Workspace/Godot/engine
 """
 
 import os
@@ -24,8 +24,8 @@ import argparse
 from pathlib import Path
 
 
-def get_cortex_path():
-    """Get the absolute path to the Cortex framework."""
+def get_polaris_path():
+    """Get the absolute path to the Polaris framework."""
     return Path(__file__).parent.parent.absolute()
 
 
@@ -132,10 +132,10 @@ def find_godot_engine(search_paths=None):
     """Find Godot engine directory by looking for SConstruct and editor executable."""
     if search_paths is None:
         # Default search paths
-        cortex_path = get_cortex_path()
+        polaris_path = get_polaris_path()
         search_paths = [
-            cortex_path.parent / 'engine',       # Sibling 'engine' folder
-            cortex_path.parent / 'godot',        # Sibling 'godot' folder
+            polaris_path.parent / 'engine',       # Sibling 'engine' folder
+            polaris_path.parent / 'godot',        # Sibling 'godot' folder
             Path.home() / 'Godot' / 'engine',
             Path('C:/Godot/engine'),
             Path('C:/Workspace/Godot/engine'),
@@ -334,13 +334,13 @@ def write_vscode_launch(project_path: Path, project_name: str, godot_exe: Path):
     print(f"  Created: {path}")
 
 
-def write_vscode_cpp_properties(project_path: Path, project_name: str, cortex_path: Path):
+def write_vscode_cpp_properties(project_path: Path, project_name: str, polaris_path: Path):
     """Generate VS Code c_cpp_properties.json for IntelliSense."""
     vscode_dir = project_path / '.vscode'
     vscode_dir.mkdir(exist_ok=True)
 
     # Convert paths to forward slashes
-    cortex_str = str(cortex_path).replace('\\', '/')
+    polaris_str = str(polaris_path).replace('\\', '/')
     project_str = str(project_path).replace('\\', '/')
 
     properties = {
@@ -349,11 +349,11 @@ def write_vscode_cpp_properties(project_path: Path, project_name: str, cortex_pa
                 "name": "Win32",
                 "includePath": [
                     f"{project_str}/src",
-                    f"{cortex_str}/src",
-                    f"{cortex_str}/godot-cpp/include",
-                    f"{cortex_str}/godot-cpp/gen/include",
-                    f"{cortex_str}/godot-cpp/gdextension",
-                    f"{cortex_str}/flecs/include"
+                    f"{polaris_str}/src",
+                    f"{polaris_str}/godot-cpp/include",
+                    f"{polaris_str}/godot-cpp/gen/include",
+                    f"{polaris_str}/godot-cpp/gdextension",
+                    f"{polaris_str}/flecs/include"
                 ],
                 "defines": [
                     "DEBUG_ENABLED",
@@ -420,7 +420,7 @@ def generate_uuid():
     return '{' + str(uuid.uuid4()).upper() + '}'
 
 
-def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, project_guid: str):
+def write_vcxproj(project_path: Path, project_name: str, polaris_path: Path, project_guid: str):
     """Generate the Visual Studio project file."""
     content = f'''<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
@@ -466,7 +466,7 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
     <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.debug.x86_64.dll</NMakeOutput>
-    <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
+    <NMakeIncludeSearchPath>$(ProjectDir)src;{polaris_path}\\src;{polaris_path}\\godot-cpp\\include;{polaris_path}\\godot-cpp\\gen\\include;{polaris_path}\\godot-cpp\\gdextension;{polaris_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>DEBUG_ENABLED;DEBUG_METHODS_ENABLED;WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;_DEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
   </PropertyGroup>
@@ -477,7 +477,7 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_release</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
     <NMakeOutput>$(ProjectDir)bin\\lib{project_name}.windows.release.x86_64.dll</NMakeOutput>
-    <NMakeIncludeSearchPath>$(ProjectDir)src;{cortex_path}\\src;{cortex_path}\\godot-cpp\\include;{cortex_path}\\godot-cpp\\gen\\include;{cortex_path}\\godot-cpp\\gdextension;{cortex_path}\\flecs\\include</NMakeIncludeSearchPath>
+    <NMakeIncludeSearchPath>$(ProjectDir)src;{polaris_path}\\src;{polaris_path}\\godot-cpp\\include;{polaris_path}\\godot-cpp\\gen\\include;{polaris_path}\\godot-cpp\\gdextension;{polaris_path}\\flecs\\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;NDEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++20</AdditionalOptions>
   </PropertyGroup>
@@ -500,10 +500,10 @@ def write_vcxproj(project_path: Path, project_name: str, cortex_path: Path, proj
     print(f"  Created: {path}")
 
 
-def write_sln(project_path: Path, project_name: str, project_guid: str, cortex_path: Path):
-    """Generate the Visual Studio solution file with both game and Cortex projects."""
-    cortex_guid = '{8A2E8F5A-0C3D-4F1E-9B5A-1234567890AB}'
-    cortex_vcxproj = cortex_path / 'cortex.vcxproj'
+def write_sln(project_path: Path, project_name: str, project_guid: str, polaris_path: Path):
+    """Generate the Visual Studio solution file with both game and Polaris projects."""
+    polaris_guid = '{8A2E8F5A-0C3D-4F1E-9B5A-1234567890AB}'
+    polaris_vcxproj = polaris_path / 'polaris.vcxproj'
 
     content = f'''Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
@@ -511,10 +511,10 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "{project_name}", "{project_name}.vcxproj", "{project_guid}"
 	ProjectSection(ProjectDependencies) = postProject
-		{cortex_guid} = {cortex_guid}
+		{polaris_guid} = {polaris_guid}
 	EndProjectSection
 EndProject
-Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "cortex", "{cortex_vcxproj}", "{cortex_guid}"
+Project("{{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}}") = "polaris", "{polaris_vcxproj}", "{polaris_guid}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -526,10 +526,10 @@ Global
 		{project_guid}.Debug|x64.Build.0 = Debug|x64
 		{project_guid}.Release|x64.ActiveCfg = Release|x64
 		{project_guid}.Release|x64.Build.0 = Release|x64
-		{cortex_guid}.Debug|x64.ActiveCfg = Debug|x64
-		{cortex_guid}.Debug|x64.Build.0 = Debug|x64
-		{cortex_guid}.Release|x64.ActiveCfg = Release|x64
-		{cortex_guid}.Release|x64.Build.0 = Release|x64
+		{polaris_guid}.Debug|x64.ActiveCfg = Debug|x64
+		{polaris_guid}.Debug|x64.Build.0 = Debug|x64
+		{polaris_guid}.Release|x64.ActiveCfg = Release|x64
+		{polaris_guid}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 EndGlobal
 '''
@@ -539,23 +539,23 @@ EndGlobal
     print(f"  Created: {path}")
 
 
-def write_sconstruct(project_path: Path, project_name: str, cortex_path: Path):
+def write_sconstruct(project_path: Path, project_name: str, polaris_path: Path):
     """Generate the SConstruct build file."""
     content = f'''#!/usr/bin/env python
 """
 SConstruct - Build script for {project_name}
 
-This game project compiles Cortex sources directly into a single DLL.
+This game project compiles Polaris sources directly into a single DLL.
 This avoids cross-extension inheritance issues.
 """
 
 import os
 import sys
 
-# Path to Cortex framework
-cortex_path = r'{cortex_path}'
-godot_cpp_path = os.path.join(cortex_path, 'godot-cpp')
-flecs_dir = os.path.join(cortex_path, 'flecs')
+# Path to Polaris framework
+polaris_path = r'{polaris_path}'
+godot_cpp_path = os.path.join(polaris_path, 'godot-cpp')
+flecs_dir = os.path.join(polaris_path, 'flecs')
 
 # Add godot-cpp to the build environment
 env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
@@ -567,7 +567,7 @@ src_dir = 'src'
 # Include paths
 env.Append(CPPPATH=[
     src_dir,
-    os.path.join(cortex_path, 'src'),
+    os.path.join(polaris_path, 'src'),
     os.path.join(flecs_dir, 'include'),
 ])
 
@@ -581,9 +581,9 @@ else:
 sources = Glob(os.path.join(src_dir, '*.cpp'))
 sources += Glob(os.path.join(src_dir, '*.c'))
 
-# Include Cortex source files directly (single DLL approach)
-cortex_src_dir = os.path.join(cortex_path, 'src')
-for root, dirs, files in os.walk(cortex_src_dir):
+# Include Polaris source files directly (single DLL approach)
+polaris_src_dir = os.path.join(polaris_path, 'src')
+for root, dirs, files in os.walk(polaris_src_dir):
     for f in files:
         if f.endswith('.cpp') or f.endswith('.c'):
             sources.append(os.path.join(root, f))
@@ -632,7 +632,7 @@ library = env.SharedLibrary(
 Default(library)
 
 Help("""
-{project_name} - CortexFramework Game
+{project_name} - Polaris Framework Game
 =====================================
 
 Build:
@@ -641,7 +641,7 @@ Build:
 
 Or open {project_name}.sln in Visual Studio and build (F7)
 
-Note: Cortex framework is compiled directly into this DLL (single extension).
+Note: Polaris framework is compiled directly into this DLL (single extension).
 """)
 '''
 
@@ -681,8 +681,8 @@ def write_register_types_cpp(project_path: Path, project_name: str):
 #include <godot_cpp/godot.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-// Cortex framework initialization helper
-#include "cortex_init.h"
+// Polaris framework initialization helper
+#include "polaris_init.h"
 
 // Game contexts
 #include "start_button_context.h"
@@ -694,8 +694,8 @@ void initialize_{project_name}_module(ModuleInitializationLevel p_level) {{
         return;
     }}
 
-    // Register Cortex framework classes
-    cortex_register_classes();
+    // Register Polaris framework classes
+    polaris_register_classes();
 
     // Register game contexts
     GDREGISTER_CLASS({class_prefix}StartButtonContext);
@@ -708,8 +708,8 @@ void uninitialize_{project_name}_module(ModuleInitializationLevel p_level) {{
         return;
     }}
 
-    // Cleanup Cortex
-    cortex_unregister_classes();
+    // Cleanup Polaris
+    polaris_unregister_classes();
 }}
 
 extern "C" {{
@@ -791,7 +791,7 @@ public:
 def write_gdextension(project_path: Path, project_name: str):
     """Generate the .gdextension file for the game in extensions folder.
 
-    Single DLL approach - Cortex is compiled into the game DLL, no dependencies.
+    Single DLL approach - Polaris is compiled into the game DLL, no dependencies.
     """
     content = f'''[configuration]
 entry_symbol = "{project_name}_library_init"
@@ -814,13 +814,13 @@ macos.release = "res://bin/lib{project_name}.macos.release.universal.dylib"
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Cortex CLI - Add C++ extension support to a Godot project',
+        description='Polaris CLI - Add C++ extension support to a Godot project',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-    python tools/cortex.py                  # Interactive - select from found projects
-    python tools/cortex.py C:/Games/MyGame  # Specify project path directly
-    python tools/cortex.py --godot-path C:/Workspace/Godot/engine
+    python tools/polaris.py                  # Interactive - select from found projects
+    python tools/polaris.py C:/Games/MyGame  # Specify project path directly
+    python tools/polaris.py --godot-path C:/Workspace/Godot/engine
 
 What this tool does:
     1. Creates src/ folder with starter C++ files
@@ -837,13 +837,13 @@ What this tool does:
     parser.add_argument('--godot-path', '-g', help='Path to Godot engine source (for debugging)')
 
     args = parser.parse_args()
-    cortex_path = get_cortex_path()
+    polaris_path = get_polaris_path()
 
     print()
     print("=" * 60)
-    print("  Cortex - Add C++ Extensions to Godot Project")
+    print("  Polaris - Add C++ Extensions to Godot Project")
     print("=" * 60)
-    print(f"  Cortex Framework: {cortex_path}")
+    print(f"  Polaris Framework: {polaris_path}")
     print()
 
     # Get project path
@@ -919,7 +919,7 @@ What this tool does:
     print()
     print("Creating files...")
     create_directory_structure(project_path)
-    write_sconstruct(project_path, project_name, cortex_path)
+    write_sconstruct(project_path, project_name, polaris_path)
     write_register_types_h(project_path, project_name)
     write_register_types_cpp(project_path, project_name)
     write_example_context(project_path, project_name)
@@ -929,7 +929,7 @@ What this tool does:
     print()
     print("Creating VS Code workspace...")
     write_vscode_tasks(project_path, project_name)
-    write_vscode_cpp_properties(project_path, project_name, cortex_path)
+    write_vscode_cpp_properties(project_path, project_name, polaris_path)
     write_vscode_settings(project_path)
 
     if godot_exe:

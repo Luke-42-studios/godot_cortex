@@ -13,7 +13,7 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{8A2E8F5A-0C3D-4F1E-9B5A-1234567890AB}</ProjectGuid>
-    <RootNamespace>cortex</RootNamespace>
+    <RootNamespace>polaris</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <Keyword>MakeFileProj</Keyword>
   </PropertyGroup>
@@ -41,7 +41,7 @@
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_debug debug_symbols=yes</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)demo\bin\libcortex.windows.template_debug.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)demo\bin\libpolaris.windows.template_debug.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;$(ProjectDir)godot-cpp\include;$(ProjectDir)godot-cpp\gen\include;$(ProjectDir)godot-cpp\gdextension;$(ProjectDir)flecs\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>DEBUG_ENABLED;DEBUG_METHODS_ENABLED;WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;_DEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++17</AdditionalOptions>
@@ -52,7 +52,7 @@
     <NMakeBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons platform=windows target=template_release</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c &amp;&amp; scons platform=windows target=template_release</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>cd /d "$(ProjectDir)" &amp;&amp; scons -c</NMakeCleanCommandLine>
-    <NMakeOutput>$(ProjectDir)demo\bin\libcortex.windows.template_release.x86_64.dll</NMakeOutput>
+    <NMakeOutput>$(ProjectDir)demo\bin\libpolaris.windows.template_release.x86_64.dll</NMakeOutput>
     <NMakeIncludeSearchPath>$(ProjectDir)src;$(ProjectDir)godot-cpp\include;$(ProjectDir)godot-cpp\gen\include;$(ProjectDir)godot-cpp\gdextension;$(ProjectDir)flecs\include</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>WINDOWS_ENABLED;TYPED_METHOD_BIND;WIN32;NDEBUG</NMakePreprocessorDefinitions>
     <AdditionalOptions>/std:c++17</AdditionalOptions>

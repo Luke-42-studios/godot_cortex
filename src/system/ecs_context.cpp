@@ -1,21 +1,24 @@
-// ECSWorldSystem.cpp - Enhanced implementation
+// ECSWorldSystem.cpp - Enhanced implementation with performance optimizations
 #include "ecs_context.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/engine.hpp>
 
-void ECSContext::_bind_methods() {
+using namespace godot;
+
+void PECSContext::_bind_methods() {
     // Expose methods to GDScript if needed
 }
 
-ECSContext::ECSContext() 
-    : ecs_world() {  
+PECSContext::PECSContext() 
+    : m_world(std::make_unique<flecs::world>()) {  
+    
     singleton_instance = this;
     
-    // Auto-initialize with engine defaults
-    _initialize();
+    // PERF: Defer expensive initialization until _initialize() is called by Godot
+    // This allows proper lifecycle management and batching of operations
 }
 
-ECSContext::~ECSContext() {
+PECSContext::~PECSContext() {
     if (singleton_instance == this) {
         singleton_instance = nullptr;
     }
@@ -24,27 +27,39 @@ ECSContext::~ECSContext() {
     _shutdown();
 }
 
-void ECSContext::_initialize() {
-    ecs_world.set_target_fps(60.0f);
-    // Add your ECS initialization here
+void PECSContext::_initialize() {
+    // COLD PATH: Initialization can take time, optimize for clarity over micro-performance
+    auto& world = get_world();
+    world.set_target_fps(60.0f);
+    
+    // TODO: Add component registration here
+    // Register core ECS components following Flecs patterns
 }
 
-void ECSContext::_shutdown() {
-    ecs_world.quit();
-}
-
-// Global instance management
-ECSContext* ECSContext::create_global_instance() {
-    if (!singleton_instance) {
-        singleton_instance = memnew(ECSContext);
-        Engine::get_singleton()->register_singleton("FlecsWorld", singleton_instance);
+void PECSContext::_shutdown() {
+    // HOT PATH: Cleanup should be efficient but complete
+    if (m_world) {
+        m_world->quit();
     }
+}
+
+// Global instance management with proper memory management
+PECSContext* PECSContext::create_global_instance() {
+    static std::once_flag init_once;
+    
+    std::call_once(init_once, []() {
+        singleton_instance = memnew(PECSContext);
+        Engine::get_singleton()->register_singleton("FlecsWorld", singleton_instance);
+    });
+    
     return singleton_instance;
 }
 
-void ECSContext::destroy_global_instance() {
+void PECSContext::destroy_global_instance() {
     if (singleton_instance) {
         Engine::get_singleton()->unregister_singleton("FlecsWorld");
+        
+        // PERF: Ensure proper cleanup order
         memdelete(singleton_instance);
         singleton_instance = nullptr;
     }

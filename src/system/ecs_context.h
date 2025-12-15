@@ -7,45 +7,48 @@
 
 using namespace godot;
 
-class ECSContext : public Object {
-    GDCLASS(ECSContext, Object)
+// CACHE: Use forward declarations to minimize include dependencies
+namespace flecs { class world; }
+
+/// @brief Polaris Context for ECS World management and Godot integration
+/// HOT PATH: Provides direct C++ access to ECS systems while maintaining Godot compatibility
+class PECSContext : public Object {
+    GDCLASS(PECSContext, Object)
 
 private:
-    static inline ECSContext* singleton_instance = nullptr;
-    flecs::world ecs_world;
+    static inline PECSContext* singleton_instance = nullptr;
+    std::unique_ptr<flecs::world> m_world;  // PERF: Unique ptr prevents accidental copies
     
-    // Prevent copying
-    ECSContext(const ECSContext&) = delete;
-   // ECSContext& operator=(const ECSContext&) = delete;
+    // Prevent copying (singleton pattern) - operator= already handled by GDCLASS
+    PECSContext(const PECSContext&) = delete;
 
 public:
-    // Fast C++ access (avoids Engine string lookup)
-    static ECSContext* get_singleton() noexcept {
+    /** @brief Fast C++ access to singleton instance */
+    static PECSContext* get_singleton() noexcept {
         return singleton_instance;
     }
 
     // Constructor/Destructor  
-    ECSContext();
-    ~ECSContext();
+    PECSContext();
+    ~PECSContext();
 
     // Core ECS world access
-    [[nodiscard]] const flecs::world& get_world() const noexcept { 
-        return ecs_world; 
+    [[nodiscard]] flecs::world& get_world() noexcept { 
+        return *m_world; 
     }
     
-    [[nodiscard]] flecs::world& get_world_mutable() noexcept { 
-        return ecs_world; 
+    [[nodiscard]] const flecs::world& get_world() const noexcept { 
+        return *m_world; 
     }
 
-    // Godot lifecycle integration
+private:
     void _initialize();
     void _shutdown();
 
+public:  
+    static PECSContext* create_global_instance();
+    static void destroy_global_instance();
+
 private:
     static void _bind_methods();
-
-public:  
-    // Static methods for module integration
-    static ECSContext* create_global_instance();
-    static void destroy_global_instance();
 };
