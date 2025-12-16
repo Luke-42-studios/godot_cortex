@@ -142,8 +142,12 @@ void Engine::_on_node_unregistered(Node* node) {
 flecs::entity Engine::_create_entity_for_node(Node* node, uint16_t depth, uint32_t tree_id) {
     auto& world = m_ecs->get_world();
 
-    String name_str = String(node->get_name());
-    CharString name_utf8 = name_str.utf8();
+    // Use Godot's unique ObjectID for entity name
+    // Format: "NodeName#12345" where 12345 is the ObjectID
+    uint64_t obj_id = static_cast<uint64_t>(node->get_instance_id());
+    String entity_name = String(node->get_name()) + "#" + String::num_uint64(obj_id);
+    CharString name_utf8 = entity_name.utf8();
+
     flecs::entity e = world.entity(name_utf8.get_data());
 
     e.set<Component::GodotNode>(Component::GodotNode(node));
