@@ -5,9 +5,9 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-#include "CPolaris.h"
-#include "system/PECSContext.h"
-#include "system/SNodeWatcher.h"
+#include "Engine.h"
+#include "context/ECSWorld.h"
+#include "system/NodeWatcher.h"
 #include "node/CNode.h"
 
 namespace godot {
@@ -21,25 +21,25 @@ namespace godot {
 /// PERF: Single registration call batches all type registrations together
 inline void polaris_register_classes() {
     // Register all classes with Godot's ClassDB
-    GDREGISTER_CLASS(PECSContext);
-    GDREGISTER_CLASS(SNodeWatcher);
-    GDREGISTER_CLASS(CPolaris);
+    GDREGISTER_CLASS(Polaris::Context::ECSWorld);
+    GDREGISTER_CLASS(Polaris::System::NodeWatcher);
+    GDREGISTER_CLASS(Polaris::Engine);
     GDREGISTER_CLASS(Context);
     GDREGISTER_CLASS(CNode);
 
     UtilityFunctions::print("[Polaris] Framework classes registered");
 
-    // Create single entry point - CPolaris owns and initializes all subsystems
-    // This creates PECSContext, SNodeWatcher, wires callbacks, and binds to scene tree
-    CPolaris::create_global_instance();
+    // Create single entry point - Polaris::Engine owns and initializes all subsystems
+    // This creates ECSWorld, NodeWatcher, wires callbacks, and binds to scene tree
+    Polaris::Engine::create_global_instance();
 }
 
 // ============================================================================
 // Call this in your game's uninitialize function at MODULE_INITIALIZATION_LEVEL_SCENE
 // ============================================================================
 inline void polaris_unregister_classes() {
-    // Single cleanup point - CPolaris destroys all subsystems in correct order
-    CPolaris::destroy_global_instance();
+    // Single cleanup point - Polaris::Engine destroys all subsystems in correct order
+    Polaris::Engine::destroy_global_instance();
 }
 
 } // namespace godot

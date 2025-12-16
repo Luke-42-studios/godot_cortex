@@ -27,10 +27,13 @@ project_name = 'cortex'
 src_dir = 'src'
 flecs_dir = 'flecs'
 
-# C++ and C source files
+# C++ and C source files (recursive)
 env.Append(CPPPATH=[src_dir])
-sources = Glob(os.path.join(src_dir, '*.cpp'))
-sources += Glob(os.path.join(src_dir, '*.c'))
+sources = []
+for root, dirs, files in os.walk(src_dir):
+    for f in files:
+        if f.endswith('.cpp') or f.endswith('.c'):
+            sources.append(os.path.join(root, f))
 
 # Flecs ECS library
 flecs_include = os.path.join(flecs_dir, 'include')
@@ -97,6 +100,8 @@ def copy_to_demo(target, source, env):
     os.makedirs(demo_output_dir, exist_ok=True)
     for src in source:
         src_path = str(src)
+        if not os.path.exists(src_path):
+            continue
         filename = os.path.basename(src_path)
         dst_path = os.path.join(demo_output_dir, filename)
         print(f"Copying {src_path} -> {dst_path}")
