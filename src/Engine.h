@@ -13,6 +13,7 @@
 #include "Log.h"
 #include "context/ECSWorld.h"
 #include "system/NodeWatcher.h"
+#include "node/CNode.h"
 
 namespace Polaris {
 

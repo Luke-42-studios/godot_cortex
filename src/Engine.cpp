@@ -105,13 +105,34 @@ void Engine::_on_node_registered(Node* node, uint16_t depth, uint32_t tree_id) {
 
     Log::print(m_debug_enabled, "[Polaris::Engine] Registered: ", node->get_name(),
                " -> Entity ", e.id());
+
+    // If this is a CNode, start its context now that the entity exists
+    if (CNode* cnode = Object::cast_to<CNode>(node)) {
+        Log::print(m_debug_enabled, "[Polaris::Engine] Starting context for CNode: ", node->get_name());
+        cnode->start_context();
+    }
+
+    if (m_debug_enabled) {
+        m_ecs->print_state();
+    }
 }
 
 void Engine::_on_node_unregistered(Node* node) {
     if (!node) return;
 
     Log::print(m_debug_enabled, "[Polaris::Engine] Unregistering: ", node->get_name());
+
+    // If this is a CNode, stop its context before destroying the entity
+    if (CNode* cnode = Object::cast_to<CNode>(node)) {
+        Log::print(m_debug_enabled, "[Polaris::Engine] Stopping context for CNode: ", node->get_name());
+        cnode->stop_context();
+    }
+
     _destroy_entity_for_node(node);
+
+    if (m_debug_enabled && m_ecs) {
+        m_ecs->print_state();
+    }
 }
 
 // =============================================================================

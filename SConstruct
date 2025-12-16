@@ -26,28 +26,33 @@ env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
 project_name = 'cortex'
 src_dir = 'src'
 flecs_dir = 'flecs'
+out_dir = 'out'
 
-# C++ and C source files (recursive)
+# Create variant directory for object files
+# This puts all .obj files in out/ instead of next to source files
+VariantDir(out_dir, '.', duplicate=0)
+
+# C++ and C source files (recursive) - use out/ prefix for build
 env.Append(CPPPATH=[src_dir])
 sources = []
 for root, dirs, files in os.walk(src_dir):
     for f in files:
         if f.endswith('.cpp') or f.endswith('.c'):
-            sources.append(os.path.join(root, f))
+            # Remap source path to out/ directory
+            rel_path = os.path.join(root, f)
+            sources.append(os.path.join(out_dir, rel_path))
 
 # Flecs ECS library
 flecs_include = os.path.join(flecs_dir, 'include')
 flecs_src = os.path.join(flecs_dir, 'src')
 env.Append(CPPPATH=[flecs_include])
 
-# Collect Flecs C source files (recursive)
-flecs_sources = []
+# Collect Flecs C source files (recursive) - use out/ prefix for build
 for root, dirs, files in os.walk(flecs_src):
     for f in files:
         if f.endswith('.c'):
-            flecs_sources.append(os.path.join(root, f))
-
-sources.extend(flecs_sources)
+            rel_path = os.path.join(root, f)
+            sources.append(os.path.join(out_dir, rel_path))
 
 # Flecs configuration - build as static library embedded in our DLL
 env.Append(CPPDEFINES=['flecs_STATIC'])

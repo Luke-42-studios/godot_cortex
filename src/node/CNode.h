@@ -35,12 +35,17 @@ public:
 // =============================================================================
 // CNode - A Node that can hold an ECS Context
 // The context can be set in the editor via the inspector
+//
+// LIFECYCLE: Context start/stop is controlled by Polaris::Engine, NOT by
+// Godot notifications. This ensures the ECS entity exists before context
+// methods are called.
 // =============================================================================
 class CNode : public Node {
     GDCLASS(CNode, Node)
 
 private:
     Ref<Context> m_context;
+    bool m_context_started = false;
 
 protected:
     static void _bind_methods();
@@ -57,6 +62,19 @@ public:
 
     // Check if a context is assigned
     bool has_context() const { return m_context.is_valid(); }
+
+    // =========================================================================
+    // Lifecycle Control (called by Polaris::Engine)
+    // =========================================================================
+
+    // Start the context - called by Polaris after entity is created
+    void start_context();
+
+    // Stop the context - called by Polaris before entity is destroyed
+    void stop_context();
+
+    // Check if context has been started
+    bool is_context_started() const { return m_context_started; }
 };
 
 #endif // CNODE_H

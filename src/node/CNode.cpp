@@ -28,6 +28,11 @@ void CNode::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_context"), &CNode::get_context);
     ClassDB::bind_method(D_METHOD("has_context"), &CNode::has_context);
 
+    // Lifecycle methods (called by Polaris::Engine)
+    ClassDB::bind_method(D_METHOD("start_context"), &CNode::start_context);
+    ClassDB::bind_method(D_METHOD("stop_context"), &CNode::stop_context);
+    ClassDB::bind_method(D_METHOD("is_context_started"), &CNode::is_context_started);
+
     // Register the property - this makes it visible in the editor
     // PROPERTY_HINT_RESOURCE_TYPE allows selecting Context or any subclass
     ADD_PROPERTY(
@@ -37,51 +42,73 @@ void CNode::_bind_methods() {
 }
 
 CNode::CNode() {
-    // Processing will be enabled in NOTIFICATION_READY if context needs it
+    // Processing is enabled when context starts
 }
 
 CNode::~CNode() {
-    // Context cleanup happens in _notification(NOTIFICATION_EXIT_TREE)
+    // Safety: ensure context is stopped
+    stop_context();
 }
 
 void CNode::_notification(int p_what) {
     switch (p_what) {
-        case NOTIFICATION_READY:
-            // Only enable processing if we have a context
-            if (m_context.is_valid()) {
-                set_process(true);
-                m_context->on_context_ready(this);
-            }
-            break;
-
         case NOTIFICATION_PROCESS:
-            if (m_context.is_valid()) {
+            // Only process if context is started
+            if (m_context_started && m_context.is_valid()) {
                 m_context->on_context_process(this, get_process_delta_time());
             }
             break;
 
         case NOTIFICATION_EXIT_TREE:
-            if (m_context.is_valid()) {
-                m_context->on_context_exit(this);
-            }
+            // Safety fallback: stop context if still running when exiting tree
+            // Normally Polaris::Engine calls stop_context() before this
+            stop_context();
             break;
     }
 }
 
 void CNode::set_context(const Ref<Context>& context) {
-    // If we're in the tree and had a previous context, call exit on it
-    if (is_inside_tree() && m_context.is_valid() && m_context != context) {
-        m_context->on_context_exit(this);
+    // If context was started, stop it first
+    if (m_context_started && m_context.is_valid() && m_context != context) {
+        stop_context();
     }
 
     m_context = context;
 
-    // If we're already in the tree and have a new context, initialize it
-    if (is_inside_tree() && m_context.is_valid()) {
-        m_context->on_context_ready(this);
-    }
+    // Note: We do NOT auto-start here. Polaris::Engine controls lifecycle.
 }
 
 Ref<Context> CNode::get_context() const {
     return m_context;
+}
+
+// =============================================================================
+// Lifecycle Control
+// =============================================================================
+
+void CNode::start_context() {
+    if (m_context_started) {
+        return; // Already started
+    }
+
+    if (!m_context.is_valid()) {
+        return; // No context to start
+    }
+
+    m_context_started = true;
+    set_process(true);
+    m_context->on_context_ready(this);
+}
+
+void CNode::stop_context() {
+    if (!m_context_started) {
+        return; // Already stopped
+    }
+
+    m_context_started = false;
+    set_process(false);
+
+    if (m_context.is_valid()) {
+        m_context->on_context_exit(this);
+    }
 }
