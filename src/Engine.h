@@ -13,13 +13,12 @@
 #include "Log.h"
 #include "context/ECSWorld.h"
 #include "system/NodeWatcher.h"
-#include "node/CNode.h"
 
 namespace Polaris {
 
 using namespace godot;
 
-/// Engine - Main Polaris Coordinator
+/// PolarisEngine - Main Polaris Coordinator
 ///
 /// Owns and orchestrates all Polaris subsystems. Acts as the bridge between
 /// Godot's scene tree and the ECS world.
@@ -27,11 +26,11 @@ using namespace godot;
 /// Maintains a single lookup map (Node* -> entity) for fast access.
 /// Reverse lookup (entity -> Node*) is done via ECS component access.
 ///
-class Engine : public Object {
-    GDCLASS(Engine, Object)
+class PolarisEngine : public Object {
+    GDCLASS(PolarisEngine, Object)
 
 private:
-    static inline Engine* singleton_instance = nullptr;
+    static inline PolarisEngine* singleton_instance = nullptr;
 
     Context::ECSWorld* m_ecs = nullptr;
     System::NodeWatcher* m_watcher = nullptr;
@@ -40,14 +39,14 @@ private:
 
     bool m_debug_enabled = true;
 
-    Engine(const Engine&) = delete;
+    PolarisEngine(const PolarisEngine&) = delete;
 
 protected:
     static void _bind_methods();
 
 public:
-    Engine();
-    ~Engine();
+    PolarisEngine();
+    ~PolarisEngine();
 
     // =========================================================================
     // Debug Control
@@ -85,8 +84,8 @@ public:
     // Singleton
     // =========================================================================
 
-    static Engine* get_singleton() noexcept { return singleton_instance; }
-    static Engine* create_global_instance();
+    static PolarisEngine* get_singleton() noexcept { return singleton_instance; }
+    static PolarisEngine* create_global_instance();
     static void destroy_global_instance();
 
 private:

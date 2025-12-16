@@ -1,6 +1,7 @@
 #include "Engine.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/context.hpp>
 
 namespace Polaris {
 
@@ -10,24 +11,24 @@ using namespace godot;
 // Class Registration
 // =============================================================================
 
-void Engine::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("set_debug_enabled", "enabled"), &Engine::set_debug_enabled);
-    ClassDB::bind_method(D_METHOD("get_debug_enabled"), &Engine::get_debug_enabled);
+void PolarisEngine::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("set_debug_enabled", "enabled"), &PolarisEngine::set_debug_enabled);
+    ClassDB::bind_method(D_METHOD("get_debug_enabled"), &PolarisEngine::get_debug_enabled);
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_enabled"), "set_debug_enabled", "get_debug_enabled");
 
-    ClassDB::bind_method(D_METHOD("get_entity_count"), &Engine::get_entity_count);
+    ClassDB::bind_method(D_METHOD("get_entity_count"), &PolarisEngine::get_entity_count);
 }
 
 // =============================================================================
 // Construction / Destruction
 // =============================================================================
 
-Engine::Engine() {
+PolarisEngine::PolarisEngine() {
     singleton_instance = this;
-    Log::info("[Polaris::Engine] Created");
+    Log::info("[PolarisEngine] Created");
 }
 
-Engine::~Engine() {
+PolarisEngine::~PolarisEngine() {
     shutdown();
 
     if (singleton_instance == this) {
@@ -39,18 +40,18 @@ Engine::~Engine() {
 // Lifecycle Management
 // =============================================================================
 
-void Engine::initialize() {
-    Log::info("[Polaris::Engine] Initializing subsystems...");
+void PolarisEngine::initialize() {
+    Log::info("[PolarisEngine] Initializing subsystems...");
 
     // Create ECS context first
     m_ecs = memnew(Context::ECSWorld);
     godot::Engine::get_singleton()->register_singleton("ECSWorld", m_ecs);
-    Log::print(m_debug_enabled, "[Polaris::Engine] ECSWorld created");
+    Log::print(m_debug_enabled, "[PolarisEngine] ECSWorld created");
 
     // Create node watcher
     m_watcher = memnew(System::NodeWatcher);
     godot::Engine::get_singleton()->register_singleton("NodeWatcher", m_watcher);
-    Log::print(m_debug_enabled, "[Polaris::Engine] NodeWatcher created");
+    Log::print(m_debug_enabled, "[PolarisEngine] NodeWatcher created");
 
     // Wire callbacks
     m_watcher->set_on_node_added([this](Node* node, uint16_t depth, uint32_t tree_id) {
@@ -61,15 +62,15 @@ void Engine::initialize() {
         _on_node_unregistered(node);
     });
 
-    Log::print(m_debug_enabled, "[Polaris::Engine] Callbacks wired");
+    Log::print(m_debug_enabled, "[PolarisEngine] Callbacks wired");
 
     m_watcher->_try_auto_bind();
 
-    Log::info("[Polaris::Engine] Initialization complete, ", m_node_to_entity.size(), " entities created");
+    Log::info("[PolarisEngine] Initialization complete, ", m_node_to_entity.size(), " entities created");
 }
 
-void Engine::shutdown() {
-    Log::print(m_debug_enabled, "[Polaris::Engine] Shutting down...");
+void PolarisEngine::shutdown() {
+    Log::print(m_debug_enabled, "[PolarisEngine] Shutting down...");
 
     m_node_to_entity.clear();
 
@@ -85,31 +86,32 @@ void Engine::shutdown() {
         m_ecs = nullptr;
     }
 
-    Log::info("[Polaris::Engine] Shutdown complete");
+    Log::info("[PolarisEngine] Shutdown complete");
 }
 
 // =============================================================================
 // Node <-> Entity Callbacks
 // =============================================================================
 
-void Engine::_on_node_registered(Node* node, uint16_t depth, uint32_t tree_id) {
+void PolarisEngine::_on_node_registered(Node* node, uint16_t depth, uint32_t tree_id) {
     if (!node || !m_ecs) return;
 
     if (m_node_to_entity.find(node) != m_node_to_entity.end()) {
-        Log::print(m_debug_enabled, "[Polaris::Engine] Node already registered, skipping: ", node->get_name());
+        Log::print(m_debug_enabled, "[PolarisEngine] Node already registered, skipping: ", node->get_name());
         return;
     }
 
     flecs::entity e = _create_entity_for_node(node, depth, tree_id);
     m_node_to_entity[node] = e;
 
-    Log::print(m_debug_enabled, "[Polaris::Engine] Registered: ", node->get_name(),
+    Log::print(m_debug_enabled, "[PolarisEngine] Registered: ", node->get_name(),
                " -> Entity ", e.id());
 
-    // If this is a CNode, start its context now that the entity exists
-    if (CNode* cnode = Object::cast_to<CNode>(node)) {
-        Log::print(m_debug_enabled, "[Polaris::Engine] Starting context for CNode: ", node->get_name());
-        cnode->start_context();
+    // Call context's _on_context_ready if node has a context assigned
+    Ref<godot::Context> ctx = node->get_context();
+    if (ctx.is_valid()) {
+        Log::print(m_debug_enabled, "[PolarisEngine] Calling context ready for: ", node->get_name());
+        ctx->_on_context_ready(node);
     }
 
     if (m_debug_enabled) {
@@ -117,15 +119,16 @@ void Engine::_on_node_registered(Node* node, uint16_t depth, uint32_t tree_id) {
     }
 }
 
-void Engine::_on_node_unregistered(Node* node) {
+void PolarisEngine::_on_node_unregistered(Node* node) {
     if (!node) return;
 
-    Log::print(m_debug_enabled, "[Polaris::Engine] Unregistering: ", node->get_name());
+    Log::print(m_debug_enabled, "[PolarisEngine] Unregistering: ", node->get_name());
 
-    // If this is a CNode, stop its context before destroying the entity
-    if (CNode* cnode = Object::cast_to<CNode>(node)) {
-        Log::print(m_debug_enabled, "[Polaris::Engine] Stopping context for CNode: ", node->get_name());
-        cnode->stop_context();
+    // Call context's _on_context_exit if node has a context assigned
+    Ref<godot::Context> ctx = node->get_context();
+    if (ctx.is_valid()) {
+        Log::print(m_debug_enabled, "[PolarisEngine] Calling context exit for: ", node->get_name());
+        ctx->_on_context_exit(node);
     }
 
     _destroy_entity_for_node(node);
@@ -139,7 +142,7 @@ void Engine::_on_node_unregistered(Node* node) {
 // Entity Management
 // =============================================================================
 
-flecs::entity Engine::_create_entity_for_node(Node* node, uint16_t depth, uint32_t tree_id) {
+flecs::entity PolarisEngine::_create_entity_for_node(Node* node, uint16_t depth, uint32_t tree_id) {
     auto& world = m_ecs->get_world();
 
     // Use Godot's unique ObjectID for entity name
@@ -160,7 +163,7 @@ flecs::entity Engine::_create_entity_for_node(Node* node, uint16_t depth, uint32
     return e;
 }
 
-void Engine::_destroy_entity_for_node(Node* node) {
+void PolarisEngine::_destroy_entity_for_node(Node* node) {
     auto it = m_node_to_entity.find(node);
     if (it == m_node_to_entity.end()) {
         return;
@@ -168,7 +171,7 @@ void Engine::_destroy_entity_for_node(Node* node) {
 
     flecs::entity e = it->second;
 
-    Log::print(m_debug_enabled, "[Polaris::Engine] Destroying entity ", e.id(),
+    Log::print(m_debug_enabled, "[PolarisEngine] Destroying entity ", e.id(),
                " for node: ", node->get_name());
 
     if (e.is_valid() && e.is_alive()) {
@@ -178,7 +181,7 @@ void Engine::_destroy_entity_for_node(Node* node) {
     m_node_to_entity.erase(it);
 }
 
-void Engine::_apply_class_tags(flecs::entity& e, Node* node) {
+void PolarisEngine::_apply_class_tags(flecs::entity& e, Node* node) {
     auto& world = m_ecs->get_world();
 
     String current_class = node->get_class();
@@ -198,11 +201,11 @@ void Engine::_apply_class_tags(flecs::entity& e, Node* node) {
 // World Access
 // =============================================================================
 
-flecs::world& Engine::get_world() noexcept {
+flecs::world& PolarisEngine::get_world() noexcept {
     return m_ecs->get_world();
 }
 
-const flecs::world& Engine::get_world() const noexcept {
+const flecs::world& PolarisEngine::get_world() const noexcept {
     return m_ecs->get_world();
 }
 
@@ -210,7 +213,7 @@ const flecs::world& Engine::get_world() const noexcept {
 // Node <-> Entity Lookups
 // =============================================================================
 
-flecs::entity Engine::get_entity_for_node(Node* node) const {
+flecs::entity PolarisEngine::get_entity_for_node(Node* node) const {
     auto it = m_node_to_entity.find(node);
     if (it != m_node_to_entity.end()) {
         return it->second;
@@ -218,13 +221,13 @@ flecs::entity Engine::get_entity_for_node(Node* node) const {
     return flecs::entity::null();
 }
 
-Node* Engine::get_node_for_entity(flecs::entity e) const {
+Node* PolarisEngine::get_node_for_entity(flecs::entity e) const {
     if (!e.is_valid() || !e.is_alive()) return nullptr;
     const Component::GodotNode* gn = e.try_get<Component::GodotNode>();
     return gn ? gn->get() : nullptr;
 }
 
-bool Engine::has_entity(Node* node) const {
+bool PolarisEngine::has_entity(Node* node) const {
     return m_node_to_entity.find(node) != m_node_to_entity.end();
 }
 
@@ -232,7 +235,7 @@ bool Engine::has_entity(Node* node) const {
 // Singleton Management
 // =============================================================================
 
-Engine* Engine::create_global_instance() {
+PolarisEngine* PolarisEngine::create_global_instance() {
     // std::call_once guarantees thread-safe one-time initialization.
     //
     // WHY WE NEED THIS:
@@ -247,7 +250,7 @@ Engine* Engine::create_global_instance() {
     static std::once_flag init_once;
 
     std::call_once(init_once, []() {
-        singleton_instance = memnew(Engine);
+        singleton_instance = memnew(PolarisEngine);
         godot::Engine::get_singleton()->register_singleton("Polaris", singleton_instance);
         singleton_instance->initialize();
     });
@@ -255,7 +258,7 @@ Engine* Engine::create_global_instance() {
     return singleton_instance;
 }
 
-void Engine::destroy_global_instance() {
+void PolarisEngine::destroy_global_instance() {
     if (singleton_instance) {
         godot::Engine::get_singleton()->unregister_singleton("Polaris");
         memdelete(singleton_instance);
