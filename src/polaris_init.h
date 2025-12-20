@@ -8,6 +8,7 @@
 #include "Engine.h"
 #include "context/ECSWorld.h"
 #include "system/NodeWatcher.h"
+#include "system/TickerNode.h"
 
 namespace godot {
 
@@ -23,6 +24,7 @@ inline void polaris_register_classes() {
     // Note: Context is now built into Godot's Node class - no CNode needed
     GDREGISTER_CLASS(Polaris::Context::ECSWorld);
     GDREGISTER_CLASS(Polaris::System::NodeWatcher);
+    GDREGISTER_CLASS(Polaris::System::TickerNode);
     GDREGISTER_CLASS(Polaris::PolarisEngine);
 
     UtilityFunctions::print("[Polaris] Framework classes registered");

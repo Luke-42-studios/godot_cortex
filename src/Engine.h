@@ -1,8 +1,8 @@
 #ifndef POLARIS_ENGINE_H
 #define POLARIS_ENGINE_H
 
-#include <godot_cpp/core/object.hpp>
-#include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <flecs.h>
 #include <unordered_map>
@@ -13,7 +13,7 @@
 #include "Log.h"
 #include "context/ECSWorld.h"
 #include "system/NodeWatcher.h"
-#include "system/FrameTicker.h"
+#include "system/TickerNode.h"
 
 namespace Polaris {
 
@@ -35,11 +35,12 @@ private:
 
     Context::ECSWorld* m_ecs = nullptr;
     System::NodeWatcher* m_watcher = nullptr;
-    System::FrameTicker* m_ticker = nullptr;
+    System::TickerNode* m_ticker_node = nullptr;
 
     std::unordered_map<Node*, flecs::entity> m_node_to_entity;
 
     bool m_debug_enabled = false;
+    bool m_shutting_down = false;
 
     PolarisEngine(const PolarisEngine&) = delete;
 
@@ -57,6 +58,9 @@ public:
     void set_debug_enabled(bool enabled) { m_debug_enabled = enabled; }
     bool get_debug_enabled() const { return m_debug_enabled; }
 
+    void set_shutting_down(bool shutting_down) { m_shutting_down = shutting_down; }
+    bool is_shutting_down() const { return m_shutting_down; }
+
     // =========================================================================
     // Lifecycle
     // =========================================================================
@@ -70,7 +74,7 @@ public:
 
     [[nodiscard]] Context::ECSWorld* get_ecs() const noexcept { return m_ecs; }
     [[nodiscard]] System::NodeWatcher* get_watcher() const noexcept { return m_watcher; }
-    [[nodiscard]] System::FrameTicker* get_ticker() const noexcept { return m_ticker; }
+    [[nodiscard]] System::TickerNode* get_ticker_node() const noexcept { return m_ticker_node; }
     [[nodiscard]] flecs::world& get_world() noexcept;
     [[nodiscard]] const flecs::world& get_world() const noexcept;
 

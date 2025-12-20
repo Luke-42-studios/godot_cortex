@@ -1,7 +1,10 @@
 #include "Engine.h"
+#include "system/TickerNode.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/context.hpp>
+#include <godot_cpp/classes/scene_tree.hpp>
+#include <godot_cpp/classes/window.hpp>
 
 namespace Polaris {
 
@@ -53,21 +56,22 @@ void PolarisEngine::initialize() {
     godot::Engine::get_singleton()->register_singleton("NodeWatcher", m_watcher);
     Log::print(m_debug_enabled, "[PolarisEngine] NodeWatcher created");
 
-    // Create frame ticker
-    m_ticker = memnew(System::FrameTicker);
-    godot::Engine::get_singleton()->register_singleton("FrameTicker", m_ticker);
-    m_ticker->initialize(&m_ecs->get_world());
-    Log::print(m_debug_enabled, "[PolarisEngine] FrameTicker created");
+    // Create ticker node (will be added to scene tree when available)
+    m_ticker_node = memnew(System::TickerNode);
+    godot::Engine::get_singleton()->register_singleton("PolarisTicker", m_ticker_node);
+    m_ticker_node->initialize(&m_ecs->get_world());
+    Log::print(m_debug_enabled, "[PolarisEngine] TickerNode created");
 
     // Wire callbacks
     m_watcher->set_on_node_added([this](Node* node, uint16_t depth, uint32_t tree_id) {
         _on_node_registered(node, depth, tree_id);
 
-        // Bind ticker to scene tree once we have one
-        if (m_ticker && !m_ticker->is_bound()) {
+        // Add ticker node to scene tree once we have one
+        if (m_ticker_node && !m_ticker_node->is_inside_tree()) {
             SceneTree* tree = m_watcher->get_scene_tree();
-            if (tree) {
-                m_ticker->bind_to_scene_tree(tree);
+            if (tree && tree->get_root()) {
+                tree->get_root()->add_child(m_ticker_node);
+                Log::info("[PolarisEngine] TickerNode added to scene tree");
             }
         }
     });
@@ -84,24 +88,46 @@ void PolarisEngine::initialize() {
 }
 
 void PolarisEngine::shutdown() {
-    Log::print(m_debug_enabled, "[PolarisEngine] Shutting down...");
+    if (m_shutting_down) return;  // Already shut down
 
+    Log::info("[PolarisEngine] Shutting down...");
+
+    // Set flag FIRST to skip all callbacks
+    m_shutting_down = true;
+
+    // Clear NodeWatcher callbacks immediately to prevent any more work
+    if (m_watcher) {
+        m_watcher->set_on_node_added(nullptr);
+        m_watcher->set_on_node_removed(nullptr);
+    }
+
+    // Clear entity map - don't need to clean up individual entities
     m_node_to_entity.clear();
 
-    if (m_ticker) {
-        godot::Engine::get_singleton()->unregister_singleton("FrameTicker");
-        memdelete(m_ticker);
-        m_ticker = nullptr;
+    // Unregister singletons first (order matters for dependencies)
+    if (m_ticker_node) {
+        godot::Engine::get_singleton()->unregister_singleton("PolarisTicker");
+    }
+    if (m_watcher) {
+        godot::Engine::get_singleton()->unregister_singleton("NodeWatcher");
+    }
+    if (m_ecs) {
+        godot::Engine::get_singleton()->unregister_singleton("ECSWorld");
+    }
+
+    // Now delete in reverse order
+    if (m_ticker_node) {
+        // Don't remove from tree - it causes more callbacks. Just delete.
+        memdelete(m_ticker_node);
+        m_ticker_node = nullptr;
     }
 
     if (m_watcher) {
-        godot::Engine::get_singleton()->unregister_singleton("NodeWatcher");
         memdelete(m_watcher);
         m_watcher = nullptr;
     }
 
     if (m_ecs) {
-        godot::Engine::get_singleton()->unregister_singleton("ECSWorld");
         memdelete(m_ecs);
         m_ecs = nullptr;
     }
@@ -127,23 +153,40 @@ void PolarisEngine::_on_node_registered(Node* node, uint16_t depth, uint32_t tre
     Log::print(m_debug_enabled, "[PolarisEngine] Registered: ", node->get_name(),
                " -> Entity ", e.id());
 
-    // Note: Context lifecycle is handled by Node's NOTIFICATION_READY
-    // which auto-starts the context via start_context(), setting up input processing
+    // Notify context that ECS is ready for this node (if it has the method)
+    Ref<godot::Context> ctx = node->get_context();
+    if (ctx.is_valid()) {
+        Log::print(m_debug_enabled, "[PolarisEngine] Node has context: ", node->get_name());
+        if (ctx->has_method("_on_ecs_ready")) {
+            Log::print(m_debug_enabled, "[PolarisEngine] Calling _on_ecs_ready for: ", node->get_name());
+            ctx->call("_on_ecs_ready", node);
+        } else {
+            Log::print(m_debug_enabled, "[PolarisEngine] Context has no _on_ecs_ready method");
+        }
+    }
 
-    m_ecs->print_state();
+    if (m_debug_enabled) {
+        m_ecs->print_state();
+    }
 }
 
 void PolarisEngine::_on_node_unregistered(Node* node) {
     if (!node) return;
 
+    // Skip cleanup during shutdown - world is being destroyed anyway
+    if (m_shutting_down) return;
+
     Log::print(m_debug_enabled, "[PolarisEngine] Unregistering: ", node->get_name());
 
-    // Note: Context lifecycle is handled by Node's stop_context()
-    // which is called when node exits tree or context is removed
+    // Notify context that ECS is about to remove this node (if it has the method)
+    Ref<godot::Context> ctx = node->get_context();
+    if (ctx.is_valid() && ctx->has_method("_on_ecs_exit")) {
+        ctx->call("_on_ecs_exit", node);
+    }
 
     _destroy_entity_for_node(node);
 
-    if (m_ecs) {
+    if (m_debug_enabled && m_ecs) {
         m_ecs->print_state();
     }
 }

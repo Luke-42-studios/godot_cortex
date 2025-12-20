@@ -40,7 +40,10 @@ ECSWorld::~ECSWorld() {
 
 void ECSWorld::_initialize() {
     auto& world = *m_world;
-    world.set_target_fps(60.0f);
+
+    // Don't let flecs manage timing - Godot handles frame rate
+    // Setting to 0 disables flecs' internal sleeping/waiting
+    world.set_target_fps(0);
 
     // Register components
     world.component<Component::GodotNode>()
@@ -62,9 +65,10 @@ void ECSWorld::_initialize() {
 
 void ECSWorld::_shutdown() {
     Log::print(m_debug_enabled, "[Polaris::Context::ECSWorld] Shutting down...");
-    if (m_world) {
-        m_world->quit();
-    }
+
+    // Explicitly reset the world to trigger cleanup now
+    // This is faster than letting the destructor handle it
+    m_world.reset();
 }
 
 // =============================================================================

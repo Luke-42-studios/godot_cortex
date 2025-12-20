@@ -34,7 +34,9 @@ NodeWatcher::NodeWatcher() {
 }
 
 NodeWatcher::~NodeWatcher() {
-    unbind_from_scene_tree();
+    // Don't unbind - it can cause slowdowns during shutdown
+    // Just clear our pointer
+    m_scene_tree = nullptr;
 
     if (singleton_instance == this) {
         singleton_instance = nullptr;
@@ -93,28 +95,24 @@ void NodeWatcher::unbind_from_scene_tree() {
 // =============================================================================
 
 void NodeWatcher::_on_node_added(Node* node) {
-    if (!node) return;
+    if (!node || !m_on_added_cb) return;
     if (Engine::get_singleton()->is_editor_hint()) return;
 
     Node* root = m_scene_tree ? Object::cast_to<Node>(m_scene_tree->get_root()) : nullptr;
     uint16_t depth = _compute_depth(node, root);
     uint32_t tree_id = _compute_tree_id(m_scene_tree);
 
-    if (m_on_added_cb) {
-        m_on_added_cb(node, depth, tree_id);
-    }
+    m_on_added_cb(node, depth, tree_id);
 
     Log::print(m_debug_enabled, "[Polaris::System::NodeWatcher] Node added: ", node->get_name(),
                " (depth=", depth, ")");
 }
 
 void NodeWatcher::_on_node_removed(Node* node) {
-    if (!node) return;
+    if (!node || !m_on_removed_cb) return;
     if (Engine::get_singleton()->is_editor_hint()) return;
 
-    if (m_on_removed_cb) {
-        m_on_removed_cb(node);
-    }
+    m_on_removed_cb(node);
 
     Log::print(m_debug_enabled, "[Polaris::System::NodeWatcher] Node removed: ", node->get_name());
 }
