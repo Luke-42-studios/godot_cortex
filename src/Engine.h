@@ -13,6 +13,7 @@
 #include "Log.h"
 #include "context/ECSWorld.h"
 #include "system/NodeWatcher.h"
+#include "system/FrameTicker.h"
 
 namespace Polaris {
 
@@ -34,10 +35,11 @@ private:
 
     Context::ECSWorld* m_ecs = nullptr;
     System::NodeWatcher* m_watcher = nullptr;
+    System::FrameTicker* m_ticker = nullptr;
 
     std::unordered_map<Node*, flecs::entity> m_node_to_entity;
 
-    bool m_debug_enabled = true;
+    bool m_debug_enabled = false;
 
     PolarisEngine(const PolarisEngine&) = delete;
 
@@ -68,6 +70,7 @@ public:
 
     [[nodiscard]] Context::ECSWorld* get_ecs() const noexcept { return m_ecs; }
     [[nodiscard]] System::NodeWatcher* get_watcher() const noexcept { return m_watcher; }
+    [[nodiscard]] System::FrameTicker* get_ticker() const noexcept { return m_ticker; }
     [[nodiscard]] flecs::world& get_world() noexcept;
     [[nodiscard]] const flecs::world& get_world() const noexcept;
 

@@ -161,6 +161,8 @@ size_t ECSWorld::validate_all_caches() {
 // =============================================================================
 
 void ECSWorld::print_state() const {
+    if (!m_debug_enabled) return;
+
     Log::info("[Polaris::Context::ECSWorld] ==========================================");
     Log::info("[Polaris::Context::ECSWorld] Flecs World State");
     Log::info("[Polaris::Context::ECSWorld] ==========================================");

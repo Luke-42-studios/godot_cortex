@@ -33,7 +33,7 @@ private:
     static inline NodeWatcher* singleton_instance = nullptr;
 
     SceneTree* m_scene_tree = nullptr;
-    bool m_debug_enabled = true;
+    bool m_debug_enabled = false;
 
     FNodeAddedCallback m_on_added_cb;
     FNodeRemovedCallback m_on_removed_cb;

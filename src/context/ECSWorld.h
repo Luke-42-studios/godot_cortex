@@ -37,7 +37,7 @@ private:
     flecs::query<Component::GodotNode, Component::NodeDepth> m_nodes_with_depth_query;
 
     // Debug flag - controllable from GDScript
-    bool m_debug_enabled = true;
+    bool m_debug_enabled = false;
 
     // Prevent copying
     ECSWorld(const ECSWorld&) = delete;

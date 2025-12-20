@@ -53,9 +53,23 @@ void PolarisEngine::initialize() {
     godot::Engine::get_singleton()->register_singleton("NodeWatcher", m_watcher);
     Log::print(m_debug_enabled, "[PolarisEngine] NodeWatcher created");
 
+    // Create frame ticker
+    m_ticker = memnew(System::FrameTicker);
+    godot::Engine::get_singleton()->register_singleton("FrameTicker", m_ticker);
+    m_ticker->initialize(&m_ecs->get_world());
+    Log::print(m_debug_enabled, "[PolarisEngine] FrameTicker created");
+
     // Wire callbacks
     m_watcher->set_on_node_added([this](Node* node, uint16_t depth, uint32_t tree_id) {
         _on_node_registered(node, depth, tree_id);
+
+        // Bind ticker to scene tree once we have one
+        if (m_ticker && !m_ticker->is_bound()) {
+            SceneTree* tree = m_watcher->get_scene_tree();
+            if (tree) {
+                m_ticker->bind_to_scene_tree(tree);
+            }
+        }
     });
 
     m_watcher->set_on_node_removed([this](Node* node) {
@@ -73,6 +87,12 @@ void PolarisEngine::shutdown() {
     Log::print(m_debug_enabled, "[PolarisEngine] Shutting down...");
 
     m_node_to_entity.clear();
+
+    if (m_ticker) {
+        godot::Engine::get_singleton()->unregister_singleton("FrameTicker");
+        memdelete(m_ticker);
+        m_ticker = nullptr;
+    }
 
     if (m_watcher) {
         godot::Engine::get_singleton()->unregister_singleton("NodeWatcher");
@@ -107,16 +127,10 @@ void PolarisEngine::_on_node_registered(Node* node, uint16_t depth, uint32_t tre
     Log::print(m_debug_enabled, "[PolarisEngine] Registered: ", node->get_name(),
                " -> Entity ", e.id());
 
-    // Call context's _on_context_ready if node has a context assigned
-    Ref<godot::Context> ctx = node->get_context();
-    if (ctx.is_valid()) {
-        Log::print(m_debug_enabled, "[PolarisEngine] Calling context ready for: ", node->get_name());
-        ctx->_on_context_ready(node);
-    }
+    // Note: Context lifecycle is handled by Node's NOTIFICATION_READY
+    // which auto-starts the context via start_context(), setting up input processing
 
-    if (m_debug_enabled) {
-        m_ecs->print_state();
-    }
+    m_ecs->print_state();
 }
 
 void PolarisEngine::_on_node_unregistered(Node* node) {
@@ -124,16 +138,12 @@ void PolarisEngine::_on_node_unregistered(Node* node) {
 
     Log::print(m_debug_enabled, "[PolarisEngine] Unregistering: ", node->get_name());
 
-    // Call context's _on_context_exit if node has a context assigned
-    Ref<godot::Context> ctx = node->get_context();
-    if (ctx.is_valid()) {
-        Log::print(m_debug_enabled, "[PolarisEngine] Calling context exit for: ", node->get_name());
-        ctx->_on_context_exit(node);
-    }
+    // Note: Context lifecycle is handled by Node's stop_context()
+    // which is called when node exits tree or context is removed
 
     _destroy_entity_for_node(node);
 
-    if (m_debug_enabled && m_ecs) {
+    if (m_ecs) {
         m_ecs->print_state();
     }
 }
