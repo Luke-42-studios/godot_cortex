@@ -366,7 +366,9 @@ Adding the full inheritance chain as tags enables:
 
 ## Frame System
 
-Polaris integrates with Godot's frame loop through `PolarisEngine` (a Node) and `FrameTicker`. This enables ECS systems to run every physics and process frame.
+Polaris integrates with Godot's frame loop through `PolarisEngine` (a Node) and custom Flecs pipelines. Systems are separated into **physics** and **process** pipelines that run only during their designated Godot callback.
+
+> **See [pipelines.md](pipelines.md) for detailed pipeline documentation.**
 
 ### Architecture
 
@@ -384,18 +386,17 @@ Polaris integrates with Godot's frame loop through `PolarisEngine` (a Node) and 
 │   _physics_process(delta)          _process(delta)             │
 │         │                                │                      │
 │         ▼                                ▼                      │
-│   m_ticker->on_physics_frame()    m_ticker->on_process_frame() │
+│   run_physics_pipeline()          run_process_pipeline()       │
 └──────────────┬─────────────────────────────┬───────────────────┘
                │                             │
                ▼                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      FrameTicker                                │
-│                                                                 │
-│   1. Update PhysicsFrame/ProcessFrame singleton                 │
-│   2. Set CurrentPhase singleton                                 │
-│   3. Call world.progress(delta) ──► Runs all ECS systems       │
-│   4. Clear CurrentPhase                                         │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────┐    ┌──────────────────────────┐
+│   Physics Pipeline       │    │   Process Pipeline       │
+│                          │    │                          │
+│   Only runs systems      │    │   Only runs systems      │
+│   registered with        │    │   registered with        │
+│   get_physics_phase()    │    │   get_process_phase()    │
+└──────────────────────────┘    └──────────────────────────┘
 ```
 
 ### Scene Setup
@@ -454,17 +455,28 @@ struct CurrentPhase {
 
 ### Accessing Frame Data in Systems
 
-```cpp
-// In your ECS system callback
-auto* engine = Polaris::PolarisEngine::get_singleton();
-auto& world = engine->get_world();
+When using custom pipelines, you don't need to check the phase - your system only runs during its registered phase:
 
-// Check current phase
-const auto* phase = world.get<Polaris::System::CurrentPhase>();
-if (phase->phase == Polaris::System::FramePhase::Physics) {
-    const auto* pf = world.get<Polaris::System::PhysicsFrame>();
-    // Use pf->delta, pf->frame, pf->time
-}
+```cpp
+// Physics system - automatically only runs during _physics_process
+auto physics_phase = Polaris::System::get_physics_phase(world);
+world.system("MyPhysicsSystem")
+    .kind(physics_phase)
+    .run([](flecs::iter& it) {
+        auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
+        const auto* pf = world.get<Polaris::System::PhysicsFrame>();
+        // Use pf->delta, pf->frame, pf->time
+    });
+
+// Process system - automatically only runs during _process
+auto process_phase = Polaris::System::get_process_phase(world);
+world.system("MyProcessSystem")
+    .kind(process_phase)
+    .run([](flecs::iter& it) {
+        auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
+        const auto* pf = world.get<Polaris::System::ProcessFrame>();
+        // Use pf->delta, pf->frame, pf->time
+    });
 ```
 
 ## Context Lifecycle
@@ -507,6 +519,8 @@ Godot's Context system allows attaching behavior resources to nodes. Polaris ext
 
 ```cpp
 // MyContext.h
+#include "system/FrameTicker.h"
+
 class MyContext : public Context {
     GDCLASS(MyContext, Context)
 
@@ -537,11 +551,12 @@ void MyContext::_on_ecs_ready(Node* owner) {
     auto* engine = Polaris::PolarisEngine::get_singleton();
     auto& world = engine->get_world();
 
-    // Register an ECS system
+    // Register an ECS system to physics pipeline
+    auto physics_phase = Polaris::System::get_physics_phase(world);
     m_my_system = world.system("MySystem")
-        .kind(flecs::OnUpdate)
+        .kind(physics_phase)
         .run([](flecs::iter& it) {
-            // This runs every frame during world.progress()
+            // This runs every _physics_process call
         });
 }
 
@@ -584,16 +599,15 @@ func _on_ecs_exit(owner: Node) -> void:
 For systems that run once per frame without entity queries:
 
 ```cpp
-world.system("MyFrameTask")
-    .kind(flecs::OnUpdate)
-    .run([](flecs::iter& it) {
-        // Runs once per world.progress() call
-        auto* engine = Polaris::PolarisEngine::get_singleton();
-        const auto* phase = engine->get_world().get<Polaris::System::CurrentPhase>();
+auto physics_phase = Polaris::System::get_physics_phase(world);
 
-        if (phase->phase == Polaris::System::FramePhase::Physics) {
-            // Handle physics frame
-        }
+world.system("MyPhysicsTask")
+    .kind(physics_phase)
+    .run([](flecs::iter& it) {
+        // Runs once per _physics_process call
+        auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
+        const auto* pf = world.get<Polaris::System::PhysicsFrame>();
+        // Use pf->delta for physics calculations
     });
 ```
 
@@ -602,9 +616,11 @@ world.system("MyFrameTask")
 For systems that iterate over entities with specific components:
 
 ```cpp
+auto physics_phase = Polaris::System::get_physics_phase(world);
+
 world.system<Component::GodotNode>("MoveSystem")
     .with(world.entity("CharacterBody3D"))  // Filter by class tag
-    .kind(flecs::OnUpdate)
+    .kind(physics_phase)
     .each([](flecs::entity e, Component::GodotNode& gn) {
         if (auto* body = gn.get_as<CharacterBody3D>()) {
             // Process each CharacterBody3D
@@ -614,24 +630,33 @@ world.system<Component::GodotNode>("MoveSystem")
 
 ### Physics vs Process Systems
 
-Both physics and process frames call `world.progress()`. To differentiate, check `CurrentPhase`:
+Use custom pipelines to ensure systems run only during their intended phase:
 
 ```cpp
-world.system("PhysicsOnlySystem")
-    .kind(flecs::OnUpdate)
-    .run([](flecs::iter& it) {
-        auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
-        const auto* phase = world.get<Polaris::System::CurrentPhase>();
+#include "system/FrameTicker.h"
 
-        // Only run during physics frames
-        if (phase->phase != Polaris::System::FramePhase::Physics) {
-            return;
-        }
+// Physics system - runs during _physics_process only
+auto physics_phase = Polaris::System::get_physics_phase(world);
+world.system<Velocity, Position>("Movement")
+    .kind(physics_phase)
+    .each([](Velocity& v, Position& p) {
+        auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
+        const auto* pf = w.get<Polaris::System::PhysicsFrame>();
+        p.value += v.value * pf->delta;
+    });
 
-        const auto* pf = world.get<Polaris::System::PhysicsFrame>();
-        // Use pf->delta for physics calculations
+// Process system - runs during _process only
+auto process_phase = Polaris::System::get_process_phase(world);
+world.system<Transform>("Interpolate")
+    .kind(process_phase)
+    .each([](Transform& t) {
+        auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
+        const auto* pf = w.get<Polaris::System::ProcessFrame>();
+        // Visual interpolation at render framerate
     });
 ```
+
+> **See [pipelines.md](pipelines.md) for more details on the pipeline system.**
 
 ## Complete Example
 
@@ -671,19 +696,15 @@ public:
     void _on_ecs_ready(Node* owner) {
         auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
 
+        // Register to physics pipeline - runs only during _physics_process
+        auto physics_phase = Polaris::System::get_physics_phase(world);
+
         m_movement_system = world.system<Polaris::Component::GodotNode>("PlayerMovement")
             .with(world.entity("CharacterBody3D"))
-            .kind(flecs::OnUpdate)
+            .kind(physics_phase)
             .each([](flecs::entity e, Polaris::Component::GodotNode& gn) {
-                auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
-                const auto* phase = w.get<Polaris::System::CurrentPhase>();
-
-                // Only process during physics frames
-                if (phase->phase != Polaris::System::FramePhase::Physics) {
-                    return;
-                }
-
                 if (auto* body = gn.get_as<CharacterBody3D>()) {
+                    auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
                     const auto* pf = w.get<Polaris::System::PhysicsFrame>();
 
                     // Simple movement example

@@ -2,6 +2,7 @@
 #include "FrameTicker.h"
 #include "../Engine.h"
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/input_event_mouse_motion.hpp>
 
 namespace Polaris {
 namespace System {
@@ -66,6 +67,7 @@ void TickerNode::_notification(int p_what) {
             if (Engine::get_singleton()->is_editor_hint()) {
                 set_physics_process(false);
                 set_process(false);
+                set_process_input(false);
                 Log::info("[Polaris::System::TickerNode] Disabled in editor");
                 return;
             }
@@ -73,11 +75,12 @@ void TickerNode::_notification(int p_what) {
             // Connect to tree_exiting to detect shutdown early
             get_tree()->connect("tree_exiting", Callable(this, "_on_tree_exiting"));
 
-            // Enable physics processing
+            // Enable physics processing and input processing
             set_physics_process(m_physics_enabled);
             set_process(m_process_enabled);
+            set_process_input(true);  // Enable input to capture mouse motion
 
-            Log::info("[Polaris::System::TickerNode] Ready, physics=", m_physics_enabled, " process=", m_process_enabled);
+            Log::info("[Polaris::System::TickerNode] Ready, physics=", m_physics_enabled, " process=", m_process_enabled, " input=true");
         } break;
 
         case NOTIFICATION_EXIT_TREE: {
@@ -130,8 +133,12 @@ void TickerNode::initialize(flecs::world* world) {
     m_world->set<PhysicsFrame>({});
     m_world->set<ProcessFrame>({});
     m_world->set<CurrentPhase>({ .phase = FramePhase::None });
+    m_world->set<InputAccumulator>({});
 
-    Log::info("[Polaris::System::TickerNode] Initialized with ECS world");
+    // Initialize custom pipelines for physics/process separation
+    init_pipelines(*m_world);
+
+    Log::info("[Polaris::System::TickerNode] Initialized with ECS world and pipelines");
 }
 
 // =============================================================================
@@ -156,20 +163,21 @@ void TickerNode::_physics_process(double delta) {
         .time = m_physics_time
     });
 
-    // Set current phase so systems know we're in physics
+    // Set current phase (for backwards compatibility with manual phase checks)
     m_world->set<CurrentPhase>({ .phase = FramePhase::Physics });
 
-    // Progress the world - this runs all ECS systems
+    // Run only physics pipeline systems
     if (m_physics_frame == 1) {
-        Log::info("[Polaris::System::TickerNode] First physics progress() call");
+        Log::info("[Polaris::System::TickerNode] First physics pipeline run");
     }
-    m_world->progress(delta);
+    run_physics_pipeline(*m_world, static_cast<float>(delta));
 
     // Clear phase
     m_world->set<CurrentPhase>({ .phase = FramePhase::None });
 
-    if (m_debug_enabled && (m_physics_frame % 60 == 0)) {
-        Log::info("[Polaris::System::TickerNode] Physics frame ", m_physics_frame,
+    // Log every 60 frames (about 1 second at 60Hz)
+    if (m_physics_frame % 60 == 0) {
+        Log::info("[TickerNode::Physics] frame=", m_physics_frame,
                   " delta=", delta, " time=", m_physics_time);
     }
 }
@@ -194,7 +202,8 @@ void TickerNode::_process(double delta) {
 
     m_world->set<CurrentPhase>({ .phase = FramePhase::Process });
 
-    m_world->progress(delta);
+    // Run only process pipeline systems
+    run_process_pipeline(*m_world, static_cast<float>(delta));
 
     m_world->set<CurrentPhase>({ .phase = FramePhase::None });
 
@@ -207,10 +216,23 @@ void TickerNode::_process(double delta) {
 void TickerNode::_input(const Ref<InputEvent>& event) {
     if (!m_world) return;
 
-    // TODO: Route input events to ECS
-    // For now, just log in debug mode
-    if (m_debug_enabled) {
-        Log::info("[Polaris::System::TickerNode] Input event received");
+    // Check for mouse motion and accumulate it
+    InputEventMouseMotion* mouse_motion = Object::cast_to<InputEventMouseMotion>(event.ptr());
+    if (mouse_motion) {
+        // Accumulate mouse delta - will be consumed by Input system
+        InputAccumulator& acc = m_world->ensure<InputAccumulator>();
+        Vector2 rel = mouse_motion->get_relative();
+        acc.mouse_delta_x += rel.x;
+        acc.mouse_delta_y += rel.y;
+
+        // Debug: log occasionally to verify input is being received
+        static uint64_t mouse_count = 0;
+        mouse_count++;
+        if (mouse_count % 100 == 1) {
+            Log::info("[TickerNode::_input] Mouse motion #", mouse_count,
+                " rel=(", rel.x, ", ", rel.y, ")",
+                " acc=(", acc.mouse_delta_x, ", ", acc.mouse_delta_y, ")");
+        }
     }
 }
 
