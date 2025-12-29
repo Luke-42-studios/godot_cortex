@@ -13,6 +13,33 @@
 namespace godot {
 
 // ============================================================================
+// System Registration Callback
+// ============================================================================
+
+/// @brief Callback type for game system registration
+/// Called by PolarisEngine after world is initialized
+using SystemRegistrationFn = void(*)(flecs::world&);
+
+namespace detail {
+    inline SystemRegistrationFn s_system_callback = nullptr;
+}
+
+/// @brief Set the callback that registers game ECS systems
+/// Must be called BEFORE polaris_register_classes()
+/// @param fn Function that registers all game systems with the world
+inline void polaris_set_system_callback(SystemRegistrationFn fn) {
+    detail::s_system_callback = fn;
+}
+
+/// @brief Called by PolarisEngine when world is ready
+/// @internal
+inline void polaris_invoke_system_callback(flecs::world& world) {
+    if (detail::s_system_callback) {
+        detail::s_system_callback(world);
+    }
+}
+
+// ============================================================================
 // Module Initialization - Polaris Framework
 // HOT PATH: Called during engine startup, optimize for reliability over speed
 // ============================================================================
@@ -31,6 +58,7 @@ inline void polaris_register_classes() {
 
     // Create single entry point - PolarisEngine owns and initializes all subsystems
     // This creates ECSWorld, NodeWatcher, wires callbacks, and binds to scene tree
+    // Also calls the system registration callback if set
     Polaris::PolarisEngine::create_global_instance();
 }
 

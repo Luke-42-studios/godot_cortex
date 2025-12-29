@@ -313,8 +313,139 @@ Engine* Engine::create_global_instance() {
        │
        ├─► Creates ECSWorld (registers as "ECSWorld" singleton)
        ├─► Creates NodeWatcher (registers as "NodeWatcher" singleton)
+       ├─► Creates TickerNode (registers as "PolarisTicker" singleton)
        ├─► Wires callbacks between NodeWatcher → Engine
-       └─► Triggers _try_auto_bind() → collects existing scene nodes
+       ├─► Triggers _try_auto_bind() → collects existing scene nodes
+       │
+       └─► Calls system registration callback (set via polaris_set_system_callback)
+```
+
+## System Registration Callback
+
+Polaris uses a **callback pattern** for game system registration. You set a callback function **before** initializing Polaris, and it gets called automatically when the world is ready.
+
+### Why Use a Callback?
+
+ECS systems are **global queries** - one system processes ALL entities matching its component signature. Systems should be registered **once** when the world is ready, not per-entity.
+
+```
+❌ Anti-pattern: Registering systems in _on_ecs_ready
+┌─────────────────────────────────────────────────────────────────┐
+│ PlayerPawn A spawns → registers movement systems                │
+│ PlayerPawn B spawns → registers SAME systems again (duplicate!) │
+│                                                                 │
+│ Result: Systems registered multiple times, undefined behavior   │
+└─────────────────────────────────────────────────────────────────┘
+
+✅ Correct: Registering systems via callback
+┌─────────────────────────────────────────────────────────────────┐
+│ polaris_set_system_callback(Pawn::register_systems)             │
+│ polaris_register_classes()                                      │
+│   └── PolarisEngine::initialize()                               │
+│       └── Calls Pawn::register_systems(world) automatically     │
+│                                                                 │
+│ PlayerPawn A spawns → adds components to entity only            │
+│ PlayerPawn B spawns → adds components to entity only            │
+│                                                                 │
+│ Result: Systems run once per frame, process ALL matching entities│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Setting Up the Callback
+
+```cpp
+// polaris_init.h provides:
+void polaris_set_system_callback(void(*fn)(flecs::world&));
+void polaris_register_classes();
+```
+
+**register_types.cpp:**
+```cpp
+#include "polaris_init.h"
+#include "system/register.h"
+
+void initialize_module(ModuleInitializationLevel p_level) {
+    if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
+
+    // Set callback BEFORE initializing Polaris
+    polaris_set_system_callback(Pawn::register_systems);
+
+    // This creates PolarisEngine and calls the callback when world is ready
+    polaris_register_classes();
+
+    // Register custom node classes
+    GDREGISTER_CLASS(Locomotion::PlayerPawn);
+    // ...
+}
+
+void uninitialize_module(ModuleInitializationLevel p_level) {
+    if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
+
+    polaris_unregister_classes();
+}
+```
+
+### Module System Registration Pattern
+
+Organize system registration by module with a centralized entry point:
+
+```
+src/
+├── register_types.cpp           # Module entry point
+├── system/
+│   └── register.cpp/.h          # Pawn::register_systems - calls all modules
+├── locomotion/
+│   └── system/
+│       ├── register.cpp/.h      # Locomotion::register_systems
+│       └── ...
+├── combat/
+│   └── system/
+│       ├── register.cpp/.h      # Combat::register_systems
+│       └── ...
+```
+
+**src/system/register.h:**
+```cpp
+namespace Pawn {
+    void register_systems(flecs::world& world);
+}
+```
+
+**src/system/register.cpp:**
+```cpp
+#include "locomotion/system/register.h"
+// #include "combat/system/register.h"
+
+namespace Pawn {
+
+void register_systems(flecs::world& world) {
+    Locomotion::register_systems(world);
+    // Combat::register_systems(world);
+}
+
+}
+```
+
+**locomotion/system/register.cpp:**
+```cpp
+namespace Locomotion {
+
+void register_systems(flecs::world& world) {
+    register_input_system(world);
+    register_look_system(world);
+    register_friction_system(world);
+    register_accelerate_system(world);
+    register_air_accelerate_system(world);
+    register_gravity_system(world);
+    register_jump_system(world);
+    register_apply_system(world);
+    register_crouch_system(world);
+    register_view_bob_system(world);
+    register_view_roll_system(world);
+    register_torso_sync_system(world);
+}
+
+}
 ```
 
 ## Shutdown Order
@@ -479,11 +610,173 @@ world.system("MyProcessSystem")
     });
 ```
 
-## Context Lifecycle
+## Custom Node Pattern (Recommended)
+
+The recommended way to use Polaris is with **custom nodes** that inherit from Godot node types and add ECS components to the entity that PolarisEngine already creates.
+
+### Why Custom Nodes?
+
+PolarisEngine automatically creates an ECS entity for every node in the scene tree. Custom nodes use this existing entity rather than creating a second one:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ PolarisEngine creates Entity for PlayerPawn node                │
+│   └── Components: GodotNode, NodeDepth, TreeId, class tags      │
+│                                                                 │
+│ PlayerPawn._on_ecs_ready() adds to SAME entity                  │
+│   └── Components: + PlayerInput, + PlayerMovement, + configs    │
+│                                                                 │
+│ Result: ONE entity per node!                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Custom Node Lifecycle
+
+```
+1. Node added to scene tree
+          │
+          ▼
+2. Godot calls node._ready()
+   • Resolve direct child references
+          │
+          ▼
+3. NodeWatcher detects node, fires callback
+          │
+          ▼
+4. PolarisEngine::_on_node_registered()
+   • Creates ECS entity for node
+   • Adds GodotNode, NodeDepth, TreeId, class tags
+          │
+          ▼
+5. If node has "_on_ecs_ready" method:
+   • node.call("_on_ecs_ready")
+   • Node adds its components to existing entity
+   • Node registers ECS systems (once globally)
+          │
+          ▼
+6. [Game runs, ECS systems execute each frame]
+          │
+          ▼
+7. Node removed from scene tree
+          │
+          ▼
+8. PolarisEngine::_on_node_unregistered()
+   • If node has "_on_ecs_exit" method:
+     • node.call("_on_ecs_exit")
+   • Destroys ECS entity (cleans up all components)
+```
+
+### Implementing a Custom Node (C++)
+
+```cpp
+// PlayerPawn.h
+class PlayerPawn : public CharacterBody3D {
+    GDCLASS(PlayerPawn, CharacterBody3D)
+
+    // === Inspector-exposed configs ===
+    Ref<MovementConfig> m_movement_config;
+
+    // === Direct child references ===
+    Camera3D* m_camera = nullptr;
+
+    // === ECS entity (from PolarisEngine, not created by us) ===
+    flecs::entity m_entity;
+
+protected:
+    static void _bind_methods();
+
+public:
+    void _ready() override {
+        // Resolve children directly (no NodePath strings)
+        m_camera = Object::cast_to<Camera3D>(get_node_or_null(NodePath("Camera3D")));
+    }
+
+    void _on_ecs_ready() {
+        auto* engine = Polaris::PolarisEngine::get_singleton();
+
+        // Get the entity PolarisEngine already created for this node
+        m_entity = engine->get_entity_for_node(this);
+
+        // Add game components to existing entity
+        m_entity.set<PlayerInput>({});
+        m_entity.set<PlayerMovement>({});
+        m_entity.set<PlayerConfig>({
+            .movement = m_movement_config.ptr()
+        });
+        m_entity.set<PlayerRefs>({
+            .camera = m_camera
+        });
+
+        // NOTE: Systems are registered via world_ready signal, not here
+        // See "world_ready Signal" section above
+    }
+
+    void _on_ecs_exit() {
+        // Entity cleanup handled automatically by PolarisEngine
+        // Just release any game-specific resources
+        m_entity = flecs::entity::null();
+    }
+};
+
+// PlayerPawn.cpp
+void PlayerPawn::_bind_methods() {
+    // Bind ECS lifecycle methods
+    ClassDB::bind_method(D_METHOD("_on_ecs_ready"), &PlayerPawn::_on_ecs_ready);
+    ClassDB::bind_method(D_METHOD("_on_ecs_exit"), &PlayerPawn::_on_ecs_exit);
+
+    // Bind config properties
+    ClassDB::bind_method(D_METHOD("get_movement_config"), &PlayerPawn::get_movement_config);
+    ClassDB::bind_method(D_METHOD("set_movement_config", "config"), &PlayerPawn::set_movement_config);
+    ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "movement_config",
+        PROPERTY_HINT_RESOURCE_TYPE, "MovementConfig"), "set_movement_config", "get_movement_config");
+}
+```
+
+### Accessing the Main Node in Systems
+
+Since PolarisEngine adds `GodotNode` component to every entity, systems can access the node directly:
+
+```cpp
+// The entity already has GodotNode from PolarisEngine
+world.system<Polaris::Component::GodotNode, PlayerMovement>("Player_Apply")
+    .kind(physics_phase)
+    .each([](Polaris::Component::GodotNode& gn, PlayerMovement& movement) {
+        // Get the node directly from GodotNode
+        CharacterBody3D* body = gn.get_as<CharacterBody3D>();
+        if (!body) return;
+
+        body->set_velocity(movement.velocity);
+        body->move_and_slide();
+    });
+```
+
+### Component Organization
+
+Split node references from config pointers for clarity:
+
+```cpp
+// Config pointers (for systems to read settings)
+struct PlayerConfig {
+    MovementConfig* movement = nullptr;
+    CrouchConfig* crouch = nullptr;
+};
+
+// Child node references (not the entity's own node - that's in GodotNode)
+struct PlayerRefs {
+    Camera3D* camera = nullptr;
+    Node3D* weapon_mount = nullptr;
+};
+```
+
+---
+
+## Context Pattern (Legacy)
+
+> **Note:** The Context pattern creates a **separate entity** from the one PolarisEngine creates. For new code, prefer the [Custom Node Pattern](#custom-node-pattern-recommended) above which uses the existing entity.
 
 Godot's Context system allows attaching behavior resources to nodes. Polaris extends this with ECS lifecycle callbacks.
 
-### Lifecycle Flow
+### Context Lifecycle Flow
 
 ```
 1. Node added to scene tree
@@ -493,13 +786,13 @@ Godot's Context system allows attaching behavior resources to nodes. Polaris ext
           │
           ▼
 3. PolarisEngine::_on_node_registered()
-   • Creates ECS entity for node
+   • Creates ECS entity for node (Entity A)
    • Checks if node has a Context
           │
           ▼
 4. If context has "_on_ecs_ready" method:
    • context.call("_on_ecs_ready", node)
-   • Context can now register ECS systems
+   • Context creates its own entity (Entity B) ← REDUNDANT
           │
           ▼
 5. [Game runs, ECS systems execute each frame]
@@ -511,8 +804,8 @@ Godot's Context system allows attaching behavior resources to nodes. Polaris ext
 7. PolarisEngine::_on_node_unregistered()
    • If context has "_on_ecs_exit" method:
      • context.call("_on_ecs_exit", node)
-     • Context should clean up ECS systems
-   • Destroys ECS entity
+     • Context must destroy Entity B manually
+   • Destroys Entity A
 ```
 
 ### Implementing a Context (C++)
@@ -525,24 +818,19 @@ class MyContext : public Context {
     GDCLASS(MyContext, Context)
 
 private:
+    flecs::entity m_my_entity;  // Separate entity (redundant with PolarisEngine's)
     flecs::entity m_my_system;
 
 protected:
     static void _bind_methods();
 
 public:
-    // Standard Godot Context callbacks (no ECS available yet)
-    virtual void _on_context_ready(Node* owner) override;
-    virtual void _on_context_exit(Node* owner) override;
-
-    // ECS lifecycle callbacks (ECS is ready)
     void _on_ecs_ready(Node* owner);
     void _on_ecs_exit(Node* owner);
 };
 
 // MyContext.cpp
 void MyContext::_bind_methods() {
-    // Must bind ECS methods for Polaris to call them
     ClassDB::bind_method(D_METHOD("_on_ecs_ready", "owner"), &MyContext::_on_ecs_ready);
     ClassDB::bind_method(D_METHOD("_on_ecs_exit", "owner"), &MyContext::_on_ecs_exit);
 }
@@ -551,20 +839,23 @@ void MyContext::_on_ecs_ready(Node* owner) {
     auto* engine = Polaris::PolarisEngine::get_singleton();
     auto& world = engine->get_world();
 
-    // Register an ECS system to physics pipeline
+    // Creates a SECOND entity (PolarisEngine already made one)
+    m_my_entity = world.entity();
+    m_my_entity.set<MyComponent>({});
+
     auto physics_phase = Polaris::System::get_physics_phase(world);
     m_my_system = world.system("MySystem")
         .kind(physics_phase)
-        .run([](flecs::iter& it) {
-            // This runs every _physics_process call
-        });
+        .run([](flecs::iter& it) { /* ... */ });
 }
 
 void MyContext::_on_ecs_exit(Node* owner) {
-    // Clean up ECS system
+    // Must manually clean up the separate entity
+    if (m_my_entity.is_valid()) {
+        m_my_entity.destruct();
+    }
     if (m_my_system.is_valid()) {
         m_my_system.destruct();
-        m_my_system = flecs::entity::null();
     }
 }
 ```
@@ -575,20 +866,12 @@ void MyContext::_on_ecs_exit(Node* owner) {
 extends Context
 class_name MyContext
 
-var my_system_id: int = 0
-
-func _on_context_ready(owner: Node) -> void:
-    # Called when context is attached, but ECS may not be ready
-    print("Context ready on: ", owner.name)
-
 func _on_ecs_ready(owner: Node) -> void:
     # Called when ECS entity exists for this node
-    # Register systems here
     print("ECS ready for: ", owner.name)
 
 func _on_ecs_exit(owner: Node) -> void:
     # Called before ECS entity is destroyed
-    # Clean up systems here
     print("ECS exit for: ", owner.name)
 ```
 
@@ -664,65 +947,83 @@ world.system<Transform>("Interpolate")
 
 ```
 GameLevel (PolarisEngine)
-├── World (Node3D)                 [context = PlayerContext]
-│   ├── Player (CharacterBody3D)
-│   └── Ground (StaticBody3D)
+├── Player (PlayerPawn)            <- Custom node type
+│   ├── Camera3D
+│   └── CollisionShape3D
+├── Ground (StaticBody3D)
 └── HUD (CanvasLayer)
 ```
 
-### PlayerContext.cpp
+### PlayerPawn.h/.cpp (Custom Node)
 
 ```cpp
-#include <godot_cpp/classes/context.hpp>
+// PlayerPawn.h
 #include <godot_cpp/classes/character_body3d.hpp>
+#include <godot_cpp/classes/camera3d.hpp>
 #include "Engine.h"
 #include "system/FrameTicker.h"
 
-class PlayerContext : public Context {
-    GDCLASS(PlayerContext, Context)
+// ECS Components
+struct PlayerMovement {
+    Vector3 velocity;
+};
+
+class PlayerPawn : public CharacterBody3D {
+    GDCLASS(PlayerPawn, CharacterBody3D)
 
 private:
-    flecs::entity m_movement_system;
+    Camera3D* m_camera = nullptr;
+    flecs::entity m_entity;
 
 protected:
     static void _bind_methods() {
-        ClassDB::bind_method(D_METHOD("_on_ecs_ready", "owner"),
-                            &PlayerContext::_on_ecs_ready);
-        ClassDB::bind_method(D_METHOD("_on_ecs_exit", "owner"),
-                            &PlayerContext::_on_ecs_exit);
+        ClassDB::bind_method(D_METHOD("_on_ecs_ready"), &PlayerPawn::_on_ecs_ready);
+        ClassDB::bind_method(D_METHOD("_on_ecs_exit"), &PlayerPawn::_on_ecs_exit);
     }
 
 public:
-    void _on_ecs_ready(Node* owner) {
-        auto& world = Polaris::PolarisEngine::get_singleton()->get_world();
-
-        // Register to physics pipeline - runs only during _physics_process
-        auto physics_phase = Polaris::System::get_physics_phase(world);
-
-        m_movement_system = world.system<Polaris::Component::GodotNode>("PlayerMovement")
-            .with(world.entity("CharacterBody3D"))
-            .kind(physics_phase)
-            .each([](flecs::entity e, Polaris::Component::GodotNode& gn) {
-                if (auto* body = gn.get_as<CharacterBody3D>()) {
-                    auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
-                    const auto* pf = w.get<Polaris::System::PhysicsFrame>();
-
-                    // Simple movement example
-                    Vector3 velocity = body->get_velocity();
-                    velocity.y -= 9.8 * pf->delta;  // Gravity
-                    body->set_velocity(velocity);
-                    body->move_and_slide();
-                }
-            });
+    void _ready() override {
+        m_camera = Object::cast_to<Camera3D>(get_node_or_null(NodePath("Camera3D")));
     }
 
-    void _on_ecs_exit(Node* owner) {
-        if (m_movement_system.is_valid()) {
-            m_movement_system.destruct();
-            m_movement_system = flecs::entity::null();
-        }
+    void _on_ecs_ready() {
+        auto* engine = Polaris::PolarisEngine::get_singleton();
+
+        // Use the entity PolarisEngine already created
+        m_entity = engine->get_entity_for_node(this);
+
+        // Add game components to existing entity
+        m_entity.set<PlayerMovement>({});
+
+        // Systems are registered via world_ready signal (see register_systems.cpp)
+    }
+
+    void _on_ecs_exit() {
+        // Entity cleanup handled by PolarisEngine
+        m_entity = flecs::entity::null();
     }
 };
+
+// register_systems.cpp - Systems registered via world_ready signal
+void register_player_systems(flecs::world& world) {
+    auto physics_phase = Polaris::System::get_physics_phase(world);
+
+    world.system<Polaris::Component::GodotNode, PlayerMovement>("Player_Movement")
+        .kind(physics_phase)
+        .each([](Polaris::Component::GodotNode& gn, PlayerMovement& movement) {
+            auto* body = gn.get_as<CharacterBody3D>();
+            if (!body) return;
+
+            auto& w = Polaris::PolarisEngine::get_singleton()->get_world();
+            const auto* pf = w.get<Polaris::System::PhysicsFrame>();
+
+            // Simple gravity
+            movement.velocity.y -= 9.8 * pf->delta;
+            body->set_velocity(movement.velocity);
+            body->move_and_slide();
+            movement.velocity = body->get_velocity();
+        });
+}
 ```
 
 ## Debug Control
@@ -750,4 +1051,142 @@ When enabled, you'll see frame logging:
 ```
 [PolarisEngine] Physics frame 60
 [Polaris::System::FrameTicker] Physics frame 60 delta=0.016667 time=1.0
+```
+
+## Prefab Composition Pattern
+
+The recommended approach for creating reusable game entities (pawns, vehicles, etc.) is **composition via child nodes**. Each feature is a separate node type that adds its own ECS components.
+
+### Core Principle: Systems are Global, Components Control Behavior
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        ECS COMPOSITION MODEL                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Systems are global queries registered ONCE at startup.                │
+│   Entities "opt-in" to systems by having the required components.       │
+│                                                                         │
+│   ┌─────────────────┐          ┌─────────────────┐                     │
+│   │   PlayerPawn    │          │     AIPawn      │                     │
+│   ├─────────────────┤          ├─────────────────┤                     │
+│   │ ✓ PawnMovement  │──┐    ┌──│ ✓ PawnMovement  │                     │
+│   │ ✓ PawnRefs      │  │    │  │ ✓ PawnRefs      │                     │
+│   │ ✓ PlayerInput   │  │    │  │ ✗ PlayerInput   │  ← No keyboard     │
+│   │ ✗ AIInput       │  │    │  │ ✓ AIInput       │  ← NavAgent feeds  │
+│   │ ✓ LocalViewRefs │  │    │  │ ✗ LocalViewRefs │                     │
+│   │ ✓ WorldViewRefs │  │    │  │ ✓ WorldViewRefs │                     │
+│   └─────────────────┘  │    │  └─────────────────┘                     │
+│                        │    │                                           │
+│                        ▼    ▼                                           │
+│              ┌─────────────────────────┐                               │
+│              │  movement_system        │  ← Processes BOTH             │
+│              │  (queries PawnMovement) │                               │
+│              └─────────────────────────┘                               │
+│                                                                         │
+│   ┌─────────────────────────┐    ┌─────────────────────────┐           │
+│   │ player_input_system     │    │ ai_input_system         │           │
+│   │ (queries PlayerInput)   │    │ (queries AIInput)       │           │
+│   │ ← Only PlayerPawn       │    │ ← Only AIPawn           │           │
+│   └─────────────────────────┘    └─────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Prefab Structure Example
+
+```
+prefabs/
+├── player_pawn.tscn
+│   └── PlayerPawn (custom CharacterBody3D)  ← Handles _input for mouse look
+│       ├── CollisionShape3D
+│       ├── Camera3D (current=true)          ← Active camera
+│       ├── TorsoMount
+│       │   └── LocalViewNode                ← First-person viewmodel
+│       ├── WorldViewNode                    ← Third-person model (for spectating/network)
+│       │   └── player_model_path = "urban.mdl"
+│       └── InventoryNode
+│
+└── ai_pawn.tscn
+    └── CharacterBody3D                      ← No custom type needed (no _input)
+        ├── CollisionShape3D
+        ├── Camera3D (current=false)         ← For spectating AI POV
+        ├── WorldViewNode                    ← Always visible (third-person)
+        │   └── player_model_path = "urban.mdl"
+        ├── InventoryNode
+        └── NavigationAgent3D                ← AI pathfinding
+
+```
+
+### Feature Nodes
+
+Each feature is a self-contained node type:
+
+| Node Type | Components Added | Purpose |
+|-----------|-----------------|---------|
+| `PlayerPawn` | PawnInput, PawnMovement, PawnRefs | Player locomotion + input handling |
+| `LocalViewNode` | LocalViewRefs, LocalViewState | First-person viewmodel rendering |
+| `WorldViewNode` | WorldViewRefs, WorldViewState | Third-person player/weapon models |
+| `InventoryNode` | WeaponInventory | Weapon slots and switching |
+
+### ViewMode Component
+
+The `ViewMode` component on the pawn entity controls which view is active:
+
+```cpp
+struct ViewMode {
+    enum Mode {
+        FirstPerson = 0,  // Show LocalView, hide WorldView player model
+        ThirdPerson = 1   // Show WorldView, hide LocalView
+    };
+    Mode current_mode;
+};
+```
+
+- `LocalViewNode` sets default to `FirstPerson` (for PlayerPawn)
+- `WorldViewNode` sets default to `ThirdPerson` (for AIPawn)
+- Systems check `ViewMode` to control visibility
+
+### Adding New Pawn Types
+
+To create a new pawn type (e.g., vehicle, turret):
+
+1. **Decide which features it needs** - Look at existing node types
+2. **Compose the prefab** - Add only the feature nodes required
+3. **No system changes needed** - Systems already query by component
+
+Example: Spectator pawn (camera only, no model)
+```
+spectator.tscn
+└── CharacterBody3D
+    └── Camera3D (current=true when spectating)
+    # No LocalView, WorldView, or Inventory needed
+```
+
+### Different Configs for Same Systems
+
+AI and players can share movement systems with different configs:
+
+```
+# player_movement.tres
+forward_speed = 10.16
+autohop = true
+bunnyhop_cap_mode = 2
+
+# ai_movement.tres
+forward_speed = 5.0
+autohop = false
+bunnyhop_cap_mode = 0
+```
+
+For AI-specific input handling, add a separate component:
+
+```cpp
+// AIInput component - written to by NavigationAgent
+struct AIInput {
+    Vector3 target_position;
+    bool should_attack = false;
+};
+
+// AI input system converts NavAgent output to PawnInput
+// Movement systems still read PawnInput - works for both!
 ```

@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "polaris_init.h"
 #include "system/TickerNode.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/engine.hpp>
@@ -85,6 +86,9 @@ void PolarisEngine::initialize() {
     m_watcher->_try_auto_bind();
 
     Log::info("[PolarisEngine] Initialization complete, ", m_node_to_entity.size(), " entities created");
+
+    // Call game system registration callback
+    godot::polaris_invoke_system_callback(m_ecs->get_world());
 }
 
 void PolarisEngine::shutdown() {
@@ -153,15 +157,22 @@ void PolarisEngine::_on_node_registered(Node* node, uint16_t depth, uint32_t tre
     Log::print(m_debug_enabled, "[PolarisEngine] Registered: ", node->get_name(),
                " -> Entity ", e.id());
 
-    // Notify context that ECS is ready for this node (if it has the method)
-    Ref<godot::Context> ctx = node->get_context();
-    if (ctx.is_valid()) {
-        Log::print(m_debug_enabled, "[PolarisEngine] Node has context: ", node->get_name());
-        if (ctx->has_method("_on_ecs_ready")) {
-            Log::print(m_debug_enabled, "[PolarisEngine] Calling _on_ecs_ready for: ", node->get_name());
-            ctx->call("_on_ecs_ready", node);
-        } else {
-            Log::print(m_debug_enabled, "[PolarisEngine] Context has no _on_ecs_ready method");
+    // Notify node that ECS is ready (Custom Node pattern - preferred)
+    if (node->has_method("_on_ecs_ready")) {
+        Log::print(m_debug_enabled, "[PolarisEngine] Calling _on_ecs_ready on node: ", node->get_name());
+        node->call("_on_ecs_ready");
+    }
+    // Also notify context if present (Legacy Context pattern)
+    else {
+        Ref<godot::Context> ctx = node->get_context();
+        if (ctx.is_valid()) {
+            Log::print(m_debug_enabled, "[PolarisEngine] Node has context: ", node->get_name());
+            if (ctx->has_method("_on_ecs_ready")) {
+                Log::print(m_debug_enabled, "[PolarisEngine] Calling _on_ecs_ready for context: ", node->get_name());
+                ctx->call("_on_ecs_ready", node);
+            } else {
+                Log::print(m_debug_enabled, "[PolarisEngine] Context has no _on_ecs_ready method");
+            }
         }
     }
 
@@ -178,10 +189,16 @@ void PolarisEngine::_on_node_unregistered(Node* node) {
 
     Log::print(m_debug_enabled, "[PolarisEngine] Unregistering: ", node->get_name());
 
-    // Notify context that ECS is about to remove this node (if it has the method)
-    Ref<godot::Context> ctx = node->get_context();
-    if (ctx.is_valid() && ctx->has_method("_on_ecs_exit")) {
-        ctx->call("_on_ecs_exit", node);
+    // Notify node that ECS is removing it (Custom Node pattern - preferred)
+    if (node->has_method("_on_ecs_exit")) {
+        node->call("_on_ecs_exit");
+    }
+    // Also notify context if present (Legacy Context pattern)
+    else {
+        Ref<godot::Context> ctx = node->get_context();
+        if (ctx.is_valid() && ctx->has_method("_on_ecs_exit")) {
+            ctx->call("_on_ecs_exit", node);
+        }
     }
 
     _destroy_entity_for_node(node);
