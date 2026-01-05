@@ -28,6 +28,8 @@ __pycache__/
 
 # Build directories
 obj/
+out/
+lib/
 demo/bin/*.dll
 demo/bin/*.so
 demo/bin/*.dylib
