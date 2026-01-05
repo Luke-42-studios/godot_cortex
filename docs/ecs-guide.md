@@ -6,14 +6,58 @@ A practical guide for building ECS systems with Polaris and Godot.
 
 ## Table of Contents
 
-1. [Naming Conventions](#naming-conventions)
-2. [Folder Structure](#folder-structure)
-3. [Creating Components](#creating-components)
-4. [Creating Systems](#creating-systems)
-5. [Creating Configs](#creating-configs)
-6. [Creating Custom Nodes](#creating-custom-nodes)
-7. [Accessing Nodes in Systems](#accessing-nodes-in-systems)
-8. [Quick Reference](#quick-reference)
+1. [Core Pattern: Input → Component → System](#core-pattern-input--component--system)
+2. [Naming Conventions](#naming-conventions)
+3. [Folder Structure](#folder-structure)
+4. [Creating Components](#creating-components)
+5. [Creating Systems](#creating-systems)
+6. [Creating Configs](#creating-configs)
+7. [Creating Custom Nodes](#creating-custom-nodes)
+8. [Entity Relationships](#entity-relationships)
+9. [Input Handling](#input-handling)
+10. [Accessing Nodes in Systems](#accessing-nodes-in-systems)
+11. [Quick Reference](#quick-reference)
+
+---
+
+## Core Pattern: Input → Component → System
+
+**The fundamental pattern:** Godot nodes write to ECS components, ECS systems read from them.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    GODOT NODES                                  │
+│                 (Write to Components)                           │
+│                                                                 │
+│   PlayerPawn._input()      →  WeaponInput.switch_to_slot        │
+│   PlayerPawn._process()    →  PawnInput.move_input              │
+│   AIPawn.set_move_input()  →  PawnInput.move_input              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ECS COMPONENTS                               │
+│                   (Pure Data Storage)                           │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ECS SYSTEMS                                  │
+│               (Read Components, Apply Logic)                    │
+│                                                                 │
+│   Movement system      ←  reads PawnInput.move_input            │
+│   WeaponSwitch system  ←  reads WeaponInput.switch_to_slot      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Why This Pattern?
+
+| Aspect | Benefit |
+|--------|---------|
+| Separation | Input handling separate from game logic |
+| Testability | Systems can be tested with mock component data |
+| AI Support | AI writes same components as player input |
+| Multiplayer | Network layer writes to components, systems unchanged |
 
 ---
 
@@ -53,30 +97,53 @@ src/
 │   └── data/                        # Static data resources
 ```
 
-> 📁 **Reference:** `source--control/src/locomotion/` for complete module structure
-
 ---
 
 ## Creating Components
 
 Components are **pure data structs** for Flecs with no Godot bindings.
 
-### Guidelines
-
-1. **Pure data only** - No methods, no Godot bindings
-2. **Use Godot types** - `Vector2`, `Vector3`, `String`
-3. **Default initialize** - All fields have sensible defaults
-
 ### Component Types
 
 | Type | Purpose | Example |
 |------|---------|---------|
-| State | Runtime data | `PawnMovement`, `WeaponState` |
-| Input | Per-frame input | `PawnInput`, `WeaponInput` |
-| Config Pointers | References to Resources | `PawnConfig` |
-| Node References | Child node pointers | `PawnRefs`, `CombatNodes` |
+| **State** | Runtime data that changes | `PawnMovement`, `WeaponState` |
+| **Input** | Per-frame input (cleared after read) | `PawnInput`, `WeaponInput` |
+| **Config Pointers** | References to Godot Resources | `PawnConfig` |
+| **Refs** | Child node or entity references | `PawnRefs`, `InventoryRefs` |
 
-> 📁 **Reference:** `source--control/src/locomotion/component/` for examples
+### Input Component Pattern
+
+Input components need a `clear_frame()` method for discrete inputs:
+
+```cpp
+struct WeaponInput {
+    bool attack_pressed = false;    // Discrete - clear after read
+    bool attack_held = false;       // Continuous - don't clear
+    int switch_to_slot = -1;        // Discrete - clear after read
+
+    void clear_frame() {
+        attack_pressed = false;
+        switch_to_slot = -1;
+        // Note: attack_held persists
+    }
+};
+```
+
+### Refs Component Pattern
+
+Store references to related entities or nodes:
+
+```cpp
+struct InventoryRefs {
+    flecs::entity pawn_entity;      // Parent pawn for syncing ActiveWeapon
+};
+
+struct PawnRefs {
+    Camera3D* camera = nullptr;
+    Inventory::InventoryNode* inventory_node = nullptr;  // For lazy entity lookup
+};
+```
 
 ---
 
@@ -84,27 +151,15 @@ Components are **pure data structs** for Flecs with no Godot bindings.
 
 Systems are registered via a **callback pattern** when Polaris initializes.
 
-> **See [architecture.md](architecture.md#system-registration-callback)** for why this pattern is used.
-
 ### Registration Flow
 
 ```
 register_types.cpp
-    └── polaris_set_system_callback(Pawn::register_systems)
+    └── polaris_set_system_callback(Systems::register_systems)
             └── src/system/register.cpp
                     ├── Locomotion::register_systems(world)
-                    └── Combat::register_systems(world)
-```
-
-### Key Pattern
-
-```cpp
-// In [module]/system/register.cpp
-void register_systems(flecs::world& world) {
-    register_input_system(world);
-    register_movement_system(world);
-    // ...
-}
+                    ├── Combat::register_systems(world)
+                    └── LocalView::register_systems(world)
 ```
 
 ### System Template
@@ -115,24 +170,34 @@ flecs::entity register_example_system(flecs::world& world) {
 
     return world.system<ComponentA, const ComponentB>("Namespace_Name")
         .kind(physics_phase)
-        .each([](ComponentA& a, const ComponentB& b) {
+        .each([](flecs::entity e, ComponentA& a, const ComponentB& b) {
             // Process entities...
         });
 }
 ```
 
-> 📁 **Reference:**
-> - `source--control/src/system/register.cpp` - Central entry point
-> - `source--control/src/locomotion/system/register.cpp` - Module registration
-> - `source--control/src/locomotion/system/Movement.cpp` - System implementations
+### System That Clears Input
+
+Systems consuming discrete input must clear it:
+
+```cpp
+world.system<WeaponInput, WeaponInventory>("Combat_WeaponSwitch")
+    .each([](WeaponInput& input, WeaponInventory& inventory) {
+        // Read input
+        if (input.switch_to_slot >= 0) {
+            inventory.active_slot = input.switch_to_slot;
+        }
+
+        // Clear discrete inputs after reading
+        input.clear_frame();
+    });
+```
 
 ---
 
 ## Creating Configs
 
 Configs are **Godot Resources** exposed in the inspector.
-
-### Key Pattern
 
 ```cpp
 class MyConfig : public godot::Resource {
@@ -141,52 +206,36 @@ class MyConfig : public godot::Resource {
     float m_value = 1.0f;
 
 protected:
-    static void _bind_methods();  // ADD_PROPERTY bindings
+    static void _bind_methods();
 
 public:
     float get_value() const { return m_value; }
     void set_value(float v) { m_value = v; }
 };
-```
 
-### _bind_methods Pattern
-
-```cpp
 void MyConfig::_bind_methods() {
-    ADD_GROUP("Group Name", "");
-
     ClassDB::bind_method(D_METHOD("get_value"), &MyConfig::get_value);
     ClassDB::bind_method(D_METHOD("set_value", "value"), &MyConfig::set_value);
-    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "value", PROPERTY_HINT_RANGE, "0,10,0.1"),
-                 "set_value", "get_value");
+    ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "value"), "set_value", "get_value");
 }
 ```
-
-> 📁 **Reference:** `source--control/src/locomotion/config/MovementConfig.h`
 
 ---
 
 ## Creating Custom Nodes
 
-Custom nodes inherit from Godot nodes and add ECS components to existing entities.
-
-### Key Principles
-
-1. **Use existing entity** - `engine->get_entity_for_node(this)`, don't create new
-2. **Add components in `_on_ecs_ready()`** - Called by PolarisEngine when entity exists
-3. **No system registration** - Systems registered via callback, not in nodes
-4. **Automatic cleanup** - PolarisEngine destroys entity when node removed
+Custom nodes inherit from Godot nodes and add ECS components.
 
 ### Lifecycle
 
 ```
 _ready()           → Resolve child node references
-_on_ecs_ready()    → Get entity, add components
+_on_ecs_ready()    → Get entity, add components (called by PolarisEngine)
 [game runs]        → Systems process entity
-_on_ecs_exit()     → Clear entity reference (cleanup automatic)
+_on_ecs_exit()     → Clear entity reference
 ```
 
-### Key Pattern
+### Basic Pattern
 
 ```cpp
 void MyNode::_on_ecs_ready() {
@@ -195,9 +244,9 @@ void MyNode::_on_ecs_ready() {
     // Get entity PolarisEngine already created
     m_entity = engine->get_entity_for_node(this);
 
-    // Add components to existing entity
-    m_entity.set<MyComponent>({});
-    m_entity.set<MyConfig>({ .ptr = m_config.ptr() });
+    // Add components
+    m_entity.set<MyState>({});
+    m_entity.set<MyRefs>({ .camera = m_camera });
 }
 ```
 
@@ -208,9 +257,117 @@ ClassDB::bind_method(D_METHOD("_on_ecs_ready"), &MyNode::_on_ecs_ready);
 ClassDB::bind_method(D_METHOD("_on_ecs_exit"), &MyNode::_on_ecs_exit);
 ```
 
-> 📁 **Reference:**
-> - `source--control/src/locomotion/PlayerPawn.cpp` - CharacterBody3D custom node
-> - `source--control/src/inventory/InventoryNode.cpp` - Node custom node
+---
+
+## Entity Relationships
+
+### Parent-Child Entity References
+
+When child entities need to reference their parent:
+
+```cpp
+// In InventoryNode._on_ecs_ready()
+// Walk up tree to find parent pawn
+CharacterBody3D* pawn = nullptr;
+Node* current = get_parent();
+while (current && !pawn) {
+    pawn = Object::cast_to<CharacterBody3D>(current);
+    current = current->get_parent();
+}
+
+// Store reference to pawn entity
+flecs::entity pawn_entity = engine->get_entity_for_node(pawn);
+m_entity.set<InventoryRefs>({ .pawn_entity = pawn_entity });
+```
+
+### Lazy Entity Lookup
+
+**Problem:** Child entity may not exist when parent initializes.
+
+**Solution:** Store the node pointer, look up entity when needed.
+
+```cpp
+// In PawnNode._on_ecs_ready() - store NODE, not entity
+Inventory::InventoryNode* inventory_node = get_node_or_null(...);
+m_entity.set<PawnRefs>({ .inventory_node = inventory_node });
+
+// In PlayerPawn._input() - look up entity lazily
+const PawnRefs* refs = m_entity.try_get<PawnRefs>();
+if (refs && refs->inventory_node) {
+    flecs::entity inv_entity = engine->get_entity_for_node(refs->inventory_node);
+    if (inv_entity.is_valid()) {
+        // Now safe to access inventory entity
+    }
+}
+```
+
+### Bridge Components
+
+When multiple systems need data from another entity, use a bridge component:
+
+```cpp
+// ActiveWeapon lives on PAWN, synced from INVENTORY
+// Views query pawn (which they already reference) instead of finding inventory
+
+// In WeaponSwitch system (runs on inventory entity):
+refs.pawn_entity.ensure<ActiveWeapon>().set_weapon(data, slot);
+
+// In LocalView system (runs on view entity):
+const ActiveWeapon* active = refs.pawn_entity.try_get<ActiveWeapon>();
+```
+
+---
+
+## Input Handling
+
+### Discrete vs Continuous Input
+
+| Type | Handler | Example | Cleared? |
+|------|---------|---------|----------|
+| Discrete | `_input()` | Key press, weapon switch | Yes |
+| Continuous | `_process()` | Held keys, movement vector | No |
+
+### Pattern: Discrete Events in _input()
+
+```cpp
+void PlayerPawn::_input(const Ref<InputEvent>& event) {
+    // Weapon switching - discrete, must not miss
+    if (event->is_action_pressed("weapon_slot_1")) {
+        weapon_input.switch_to_slot = 0;
+    }
+
+    // Mouse motion - accumulated
+    if (auto* motion = Object::cast_to<InputEventMouseMotion>(event.ptr())) {
+        pawn_input.look_delta += motion->get_relative();
+    }
+}
+```
+
+### Pattern: Continuous State in _process()
+
+```cpp
+void PlayerPawn::_process(double delta) {
+    Input* input = Input::get_singleton();
+
+    // Movement vector - polled each frame
+    pawn_input.move_input = input->get_vector("left", "right", "forward", "back");
+
+    // Held state - polled each frame
+    pawn_input.jump_held = input->is_action_pressed("jump");
+    weapon_input.attack_held = input->is_action_pressed("attack");
+}
+```
+
+### AI Input
+
+AI pawns expose setters instead of reading from Input singleton:
+
+```cpp
+void AIPawn::set_move_input(Vector2 input) {
+    PawnInput& pawn_input = m_entity.ensure<PawnInput>();
+    pawn_input.move_input = input;
+}
+```
 
 ---
 
@@ -218,38 +375,20 @@ ClassDB::bind_method(D_METHOD("_on_ecs_exit"), &MyNode::_on_ecs_exit);
 
 ### Entity's Own Node (GodotNode)
 
-PolarisEngine adds `GodotNode` to every entity:
-
 ```cpp
 world.system<Polaris::Component::GodotNode, MyComponent>("MySystem")
     .each([](Polaris::Component::GodotNode& gn, MyComponent& comp) {
         auto* body = gn.get_as<CharacterBody3D>();
-        if (!body) return;
-        // Use body...
+        body->set_velocity(...);
     });
 ```
 
-### Child Nodes (Refs Component)
-
-Store child node pointers in a refs component:
+### Child Nodes via Refs
 
 ```cpp
 world.system<MyRefs, const MyState>("MySystem")
     .each([](MyRefs& refs, const MyState& state) {
-        if (!refs.camera) return;
         refs.camera->set_rotation(...);
-    });
-```
-
-### Class Hierarchy Tags
-
-Query by Godot class type:
-
-```cpp
-world.query<Polaris::Component::GodotNode>()
-    .with(world.entity("CharacterBody3D"))
-    .each([](flecs::entity e, Polaris::Component::GodotNode& gn) {
-        // All CharacterBody3D entities
     });
 ```
 
@@ -271,30 +410,39 @@ world.query<Polaris::Component::GodotNode>()
 
 ```cpp
 // Get delta time
-float delta = Util::get_physics_delta();  // or get_process_delta()
+float delta = Polaris::Util::get_physics_delta();
 
-// Get entity's node as specific type
+// Get entity's node
 auto* body = gn.get_as<CharacterBody3D>();
 
 // Get config values
 float speed = config.movement->get_max_speed();
 
-// Register on physics phase
+// Physics phase system
 auto phase = Polaris::System::get_physics_phase(world);
-world.system("Name").kind(phase).each(...);
 
-// Register on process phase
+// Process phase system
 auto phase = Polaris::System::get_process_phase(world);
-world.system("Name").kind(phase).each(...);
+
+// Lazy entity lookup
+flecs::entity e = engine->get_entity_for_node(node_ptr);
+
+// Safe component access
+const MyComp* comp = entity.try_get<MyComp>();
+if (comp) { /* use comp */ }
+
+// Mutable component access
+MyComp& comp = entity.ensure<MyComp>();
 ```
 
 ### Reference Files
 
 | Pattern | Example File |
 |---------|--------------|
-| Component | `locomotion/component/PawnInput.h` |
-| System | `locomotion/system/Movement.cpp` |
-| Config | `locomotion/config/MovementConfig.h` |
-| Custom Node | `locomotion/PlayerPawn.cpp` |
-| Data Resource | `combat/weapon/data/WeaponData.h` |
-| System Registration | `system/register.cpp` |
+| Input Component | `pawn/component/PawnInput.h` |
+| Refs Component | `pawn/component/PawnRefs.h` |
+| Input in Node | `pawn/PlayerPawn.cpp` |
+| System with Clear | `combat/weapon/system/WeaponSwitch.cpp` |
+| Lazy Entity Lookup | `pawn/PlayerPawn.cpp` |
+| Bridge Component | `combat/weapon/component/ActiveWeapon.h` |
+| Entity Relationship | `inventory/InventoryNode.cpp` |

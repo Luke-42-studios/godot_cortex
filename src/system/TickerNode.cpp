@@ -176,7 +176,7 @@ void TickerNode::_physics_process(double delta) {
     m_world->set<CurrentPhase>({ .phase = FramePhase::None });
 
     // Log every 60 frames (about 1 second at 60Hz)
-    if (m_physics_frame % 60 == 0) {
+    if (m_debug_enabled && (m_physics_frame % 60 == 0)) {
         Log::info("[TickerNode::Physics] frame=", m_physics_frame,
                   " delta=", delta, " time=", m_physics_time);
     }
@@ -226,12 +226,14 @@ void TickerNode::_input(const Ref<InputEvent>& event) {
         acc.mouse_delta_y += rel.y;
 
         // Debug: log occasionally to verify input is being received
-        static uint64_t mouse_count = 0;
-        mouse_count++;
-        if (mouse_count % 100 == 1) {
-            Log::info("[TickerNode::_input] Mouse motion #", mouse_count,
-                " rel=(", rel.x, ", ", rel.y, ")",
-                " acc=(", acc.mouse_delta_x, ", ", acc.mouse_delta_y, ")");
+        if (m_debug_enabled) {
+            static uint64_t mouse_count = 0;
+            mouse_count++;
+            if (mouse_count % 100 == 1) {
+                Log::info("[TickerNode::_input] Mouse motion #", mouse_count,
+                    " rel=(", rel.x, ", ", rel.y, ")",
+                    " acc=(", acc.mouse_delta_x, ", ", acc.mouse_delta_y, ")");
+            }
         }
     }
 }
