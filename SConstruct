@@ -17,7 +17,7 @@ import os
 import sys
 
 # Get the path to godot-cpp
-godot_cpp_path = os.environ.get('GODOT_CPP_PATH', 'godot-cpp')
+godot_cpp_path = os.environ.get('GODOT_CPP_PATH', 'third_party/godot-cpp')
 
 # Add godot-cpp to the build environment
 env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
