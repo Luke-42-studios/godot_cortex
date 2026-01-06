@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dmqwjt7u3gme8"]
+
+[node name="Polaris" type="Node" unique_id=1951002613]
+
+[node name="PipelineNode" type="PipelineNode" parent="." unique_id=47875674]
+
+[node name="CompositionFactory" type="CompositionFactory" parent="." unique_id=1789751945]
+debug_enabled = true

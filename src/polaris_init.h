@@ -5,33 +5,48 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-#include "Engine.h"
+// Core singletons
+#include "core/Engine.h"
+#include "core/ECSWorld.h"
+#include "core/PipelineNode.h"
+#include "core/CompositionFactory.h"
+
+// Composition system
+#include "composition/Composition.h"
+#include "composition/TestComposition.h"
 
 namespace godot {
 
-
 // ============================================================================
 // Module Initialization - Polaris Framework
-// HOT PATH: Called during engine startup, optimize for reliability over speed
 // ============================================================================
 
 /// @brief Registers all Polaris framework classes with Godot's class system
-/// PERF: Single registration call batches all type registrations together
 inline void polaris_register_classes() {
-    // Register all classes with Godot's ClassDB
-    // Note: Context is now built into Godot's Node class - no CNode needed
+    // Core singletons
     GDREGISTER_CLASS(Polaris::PolarisEngine);
+    GDREGISTER_CLASS(Polaris::ECSWorld);
+
+    // Core nodes
+    GDREGISTER_CLASS(Polaris::PipelineNode);
+    GDREGISTER_CLASS(Polaris::CompositionFactory);
+
+    // Composition resources
+    GDREGISTER_CLASS(Polaris::Composition);
+    GDREGISTER_CLASS(Polaris::TestComposition);
 
     UtilityFunctions::print("[Polaris] Framework classes registered");
 
+    // Create Engine singleton - this initializes ECSWorld internally
     Polaris::PolarisEngine::create_global_instance();
 }
 
 // ============================================================================
-// Call this in your game's uninitialize function at MODULE_INITIALIZATION_LEVEL_SCENE
+// Module Cleanup
 // ============================================================================
+
 inline void polaris_unregister_classes() {
-    // Single cleanup point - PolarisEngine destroys all subsystems in correct order
+    // Engine handles shutdown of all subsystems (including ECSWorld)
     Polaris::PolarisEngine::destroy_global_instance();
 }
 

@@ -4,18 +4,27 @@
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/core/class_db.hpp>
-#include <flecs.h>
-#include <unordered_map>
 #include <mutex>
 
-#include "Log.h"
-
+#include "ECSWorld.h"
 
 namespace Polaris {
 
 using namespace godot;
 
-/// PolarisEngine - Main Polaris Coordinator
+// =============================================================================
+// PolarisEngine - Main Polaris Coordinator
+// =============================================================================
+//
+// The central singleton that initializes and owns all Polaris subsystems.
+// Creates ECSWorld first, then coordinates other framework components.
+//
+// USAGE:
+//   Polaris::PolarisEngine::create_global_instance(); // In module init
+//   auto* engine = PolarisEngine::get_singleton();
+//   auto& world = engine->ecs()->world();
+//
+// =============================================================================
 
 class PolarisEngine : public Object {
     GDCLASS(PolarisEngine, Object)
@@ -33,12 +42,18 @@ public:
     ~PolarisEngine();
 
     // =========================================================================
+    // Subsystem Access
+    // =========================================================================
+
+    /// Get the ECS world singleton
+    ECSWorld* ecs() const { return ECSWorld::get(); }
+
+    // =========================================================================
     // Lifecycle
     // =========================================================================
 
     void initialize();
     void shutdown();
-
 
     // =========================================================================
     // Singleton
@@ -47,7 +62,6 @@ public:
     static PolarisEngine* get_singleton() noexcept { return singleton_instance; }
     static PolarisEngine* create_global_instance();
     static void destroy_global_instance();
-
 };
 
 } // namespace Polaris
