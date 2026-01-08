@@ -17,10 +17,13 @@ void Composition::_bind_methods() {
 // =============================================================================
 
 void Composition::compose(flecs::entity entity, Node* root) {
-    // Set root node reference for 3D nodes
-    if (auto* root3d = Object::cast_to<Node3D>(root)) {
-        entity.set<Gd::Node>({ .root = root3d });
-        Log::info("[Composition] Set Gd::Node for entity #", entity.id());
+    // Always set base Gd::Node for generic node access
+    entity.set<Gd::Node>(Gd::Node::create(root));
+
+    // Also set Gd::Node3D if root is a 3D node
+    if (Object::cast_to<godot::Node3D>(root)) {
+        entity.set<Gd::Node3D>(Gd::Node3D::create(root));
+        Log::info("[Composition] Set Gd::Node3D for entity #", entity.id());
     }
 
     // Subclasses override to add additional components
@@ -28,10 +31,12 @@ void Composition::compose(flecs::entity entity, Node* root) {
 }
 
 void Composition::decompose(flecs::entity entity) {
-    // Null out node reference to prevent dangling pointer
-    Gd::Node* node = entity.try_get_mut<Gd::Node>();
-    if (node) {
-        node->root = nullptr;
+    // Unbind node references to prevent dangling pointers
+    if (auto* node = entity.try_get_mut<Gd::Node>()) {
+        node->unbind();
+    }
+    if (auto* node3d = entity.try_get_mut<Gd::Node3D>()) {
+        node3d->unbind();
     }
 
     // Subclasses override to cleanup additional components

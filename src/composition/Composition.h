@@ -44,13 +44,13 @@ public:
     // =========================================================================
 
     /// Called when entity is created - add components and reference nodes
-    /// Base implementation sets Gd::Node for 3D nodes
+    /// Base implementation sets Gd::Node (always) and Gd::Node3D (for 3D nodes)
     /// @param entity The flecs entity to compose
     /// @param root The Godot node that triggered composition
     virtual void compose(flecs::entity entity, Node* root);
 
     /// Called when entity is destroyed - cleanup (optional override)
-    /// Base implementation nulls out Gd::Node
+    /// Base implementation unbinds Gd::Node and Gd::Node3D
     /// @param entity The flecs entity being decomposed
     virtual void decompose(flecs::entity entity);
 };

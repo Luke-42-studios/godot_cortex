@@ -190,7 +190,7 @@ void PlayerPawn::_bind_methods() {
 }
 
 void PlayerPawn::compose(flecs::entity e, Node* root) {
-    // Call parent — sets Gd::Node automatically for 3D
+    // Call parent — sets Gd::Node + Gd::Node3D for 3D nodes
     Composition::compose(e, root);
 
     // Add data component
@@ -213,7 +213,7 @@ void PlayerPawn::decompose(flecs::entity e) {
         controller->unbind();
     }
 
-    // Call parent — clears Gd::Node
+    // Call parent — unbinds Gd::Node + Gd::Node3D
     Composition::decompose(e);
 
     Log::info("[PlayerPawn] Decomposed entity");
@@ -333,7 +333,8 @@ In the output, you should see:
 ```
 
 Your entity now exists in the ECS world with:
-- `Gd::Node` — pointing to the CharacterBody3D (auto-set by base)
+- `Gd::Node` — generic node reference (auto-set by base)
+- `Gd::Node3D` — 3D transform access (auto-set for 3D nodes)
 - `Gd::Physics::CharacterController` — with physics API access
 - `Health` — with current: 100, max: 100
 
@@ -392,7 +393,7 @@ world.system<Gd::Physics::CharacterController, Health>()
 │   │ .tres       │     │ Godot Node  │     │ ECS Entity           │          │
 │   │ Resource    │ ──> │ + metadata  │ ──> │                      │          │
 │   │             │     │             │     │ Health (data)        │          │
-│   │ PlayerPawn  │     │ Player.tscn │     │ Gd::Node (base)      │          │
+│   │ PlayerPawn  │     │ Player.tscn │     │ Gd::Node + Node3D    │          │
 │   │ max_hp: 100 │     │ composition │     │ Gd::Physics::        │          │
 │   └─────────────┘     └─────────────┘     │   CharacterController│          │
 │                                           └──────────────────────┘          │
