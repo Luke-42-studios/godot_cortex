@@ -4,6 +4,8 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/node2d.hpp>
+#include <godot_cpp/classes/character_body3d.hpp>
+#include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/object.hpp>
 
 namespace Polaris {
@@ -95,7 +97,75 @@ struct Node2D {
     void set_rotation(float r) { if (root) root->set_rotation(r); }
 };
 
+// -----------------------------------------------------------------------------
+// CharacterBody3D - Physics body with move_and_slide
+// -----------------------------------------------------------------------------
+// Use for pawns that need physics-based movement.
+
+struct CharacterBody3D {
+    godot::CharacterBody3D* ptr = nullptr;
+
+    static CharacterBody3D create(godot::Node* n) {
+        return { Object::cast_to<godot::CharacterBody3D>(n) };
+    }
+
+    bool is_valid() const { return ptr != nullptr; }
+    void unbind() { ptr = nullptr; }
+
+    // Physics helpers
+    Vector3 get_velocity() const { return ptr ? ptr->get_velocity() : Vector3(); }
+    void set_velocity(const Vector3& v) { if (ptr) ptr->set_velocity(v); }
+
+    bool move_and_slide() { return ptr ? ptr->move_and_slide() : false; }
+    bool is_on_floor() const { return ptr ? ptr->is_on_floor() : false; }
+    bool is_on_wall() const { return ptr ? ptr->is_on_wall() : false; }
+    bool is_on_ceiling() const { return ptr ? ptr->is_on_ceiling() : false; }
+
+    Vector3 get_floor_normal() const { return ptr ? ptr->get_floor_normal() : Vector3(0, 1, 0); }
+    Vector3 get_wall_normal() const { return ptr ? ptr->get_wall_normal() : Vector3(); }
+};
+
+// -----------------------------------------------------------------------------
+// Camera3D - Camera reference for player view
+// -----------------------------------------------------------------------------
+// Use for entities that control camera rotation (pitch).
+
+struct Camera3D {
+    godot::Camera3D* ptr = nullptr;
+
+    static Camera3D create(godot::Camera3D* c) {
+        return { c };
+    }
+
+    static Camera3D create(godot::Node* n) {
+        return { Object::cast_to<godot::Camera3D>(n) };
+    }
+
+    bool is_valid() const { return ptr != nullptr; }
+    void unbind() { ptr = nullptr; }
+
+    // Transform helpers
+    Vector3 get_rotation() const { return ptr ? ptr->get_rotation() : Vector3(); }
+    void set_rotation(const Vector3& r) { if (ptr) ptr->set_rotation(r); }
+
+    float get_fov() const { return ptr ? ptr->get_fov() : 75.0f; }
+    void set_fov(float f) { if (ptr) ptr->set_fov(f); }
+
+    void make_current() { if (ptr) ptr->make_current(); }
+    bool is_current() const { return ptr ? ptr->is_current() : false; }
+};
+
 } // namespace Gd
+
+// =============================================================================
+// Tag:: Components - Zero-sized marker tags for filtering
+// =============================================================================
+
+namespace Tag {
+
+struct Player {};   // Marks player-controlled entities
+
+} // namespace Tag
 
 } // namespace Polaris
 
