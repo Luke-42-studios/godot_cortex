@@ -1,19 +1,25 @@
 // examples/pawn_composition.cpp
 // Complete Pawn hierarchy showing Composition pattern in Polaris
+//
+// NAMESPACE CONVENTION:
+//   Polaris::      - Engine code (Runtime, Gd::, Tag::)
+//   Game::         - Your game code (components flat, domains nested)
+//
+// Polaris provides:  Gd::Node3D, Gd::CharacterBody3D, Tag::Player, etc.
+// You define:        Health, Velocity, AI, and game-specific tags
 
 #include "polaris/core/Runtime.h"
 #include "polaris/composition/Composition.h"
-#include "components/Data.h"
-#include "components/Tags.h"
-#include "components/Gd.h"
+#include "polaris/components/Gd.h"  // Provides Polaris::Gd::
+
+using namespace Polaris;  // Access Gd::, Tag::, runtime(), etc.
 
 namespace Game {
 
 // ============================================================================
-// COMPONENTS
+// DATA COMPONENTS (flat in Game:: namespace)
 // ============================================================================
 
-// Data components - pure POD structs
 struct Health {
     float current = 100.0f;
     float max = 100.0f;
@@ -47,16 +53,23 @@ struct AI {
     uint8_t padding[3];
 };
 
-// Tag components
+// ============================================================================
+// GAME-SPECIFIC TAGS (extend Polaris::Tag:: with your own)
+// ============================================================================
+// Note: Polaris provides Tag::Player, Tag::Enemy, Tag::Grounded, Tag::Dead
+// Add game-specific tags here:
+
 namespace Tag {
-    struct Player {};
-    struct Enemy {};
-    struct Grounded {};
-    struct Dead {};
+    struct Interactable {};
+    struct QuestGiver {};
 }
 
-// Gd:: components - Godot node pointers
-namespace Gd {
+// ============================================================================
+// Gd:: COMPONENT EXAMPLES
+// ============================================================================
+// In production, Polaris::Gd:: provides these. Shown here for reference.
+
+namespace GdExample {
     struct Node3D {
         godot::Node3D* root = nullptr;
 
