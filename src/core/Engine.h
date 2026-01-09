@@ -6,8 +6,6 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <mutex>
 
-#include "ECSWorld.h"
-
 namespace Polaris {
 
 using namespace godot;
@@ -17,12 +15,12 @@ using namespace godot;
 // =============================================================================
 //
 // The central singleton that initializes and owns all Polaris subsystems.
-// Creates ECSWorld first, then coordinates other framework components.
+// Creates Runtime first, which contains the flecs world and arenas.
 //
 // USAGE:
 //   Polaris::PolarisEngine::create_global_instance(); // In module init
 //   auto* engine = PolarisEngine::get_singleton();
-//   auto& world = engine->ecs()->world();
+//   auto* runtime = Runtime::get();
 //
 // =============================================================================
 
@@ -40,13 +38,6 @@ protected:
 public:
     PolarisEngine();
     ~PolarisEngine();
-
-    // =========================================================================
-    // Subsystem Access
-    // =========================================================================
-
-    /// Get the ECS world singleton
-    ECSWorld* ecs() const { return ECSWorld::get(); }
 
     // =========================================================================
     // Lifecycle

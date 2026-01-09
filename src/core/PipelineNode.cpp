@@ -1,4 +1,5 @@
 #include "PipelineNode.h"
+#include "Runtime.h"
 #include "Engine.h"
 #include "util/Log.h"
 
@@ -61,30 +62,32 @@ void PipelineNode::_ready() {
 }
 
 void PipelineNode::_input(const Ref<InputEvent>& event) {
-    // TODO: Run input pipeline
-    // auto& world = ECSWorld::get()->world();
-    // world.progress(0.0f);
-
+    Runtime* rt = Runtime::get();
+    if (rt) {
+        rt->tick(Phase_Input, 0.0f);
+    }
     Log::print(m_debug_enabled, "[PipelineNode] _input()");
 }
 
 void PipelineNode::_physics_process(double delta) {
     m_physics_frame++;
-
-    // TODO: Run physics pipeline
-    // auto& world = ECSWorld::get()->world();
-    // world.progress(delta);
-
+    
+    Runtime* rt = Runtime::get();
+    if (rt) {
+        rt->tick(Phase_Physics, (float)delta);
+    }
+    
     Log::print(m_debug_enabled, "[PipelineNode] _physics_process(", delta, ") frame=", m_physics_frame);
 }
 
 void PipelineNode::_process(double delta) {
     m_process_frame++;
-
-    // TODO: Run process and render pipelines
-    // auto& world = ECSWorld::get()->world();
-    // world.progress(delta);
-
+    
+    Runtime* rt = Runtime::get();
+    if (rt) {
+        rt->tick(Phase_Process, (float)delta);
+    }
+    
     Log::print(m_debug_enabled, "[PipelineNode] _process(", delta, ") frame=", m_process_frame);
 }
 

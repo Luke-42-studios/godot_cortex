@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "Runtime.h"
 #include "util/Log.h"
 
 #include <godot_cpp/core/memory.hpp>
@@ -41,8 +42,8 @@ PolarisEngine::~PolarisEngine() {
 void PolarisEngine::initialize() {
     Log::info("[PolarisEngine] Initializing subsystems...");
 
-    // Initialize ECS first - everything depends on this
-    ECSWorld::create_global_instance();
+    // Initialize Runtime - contains the flecs world and arenas
+    Runtime::create_global_instance();
 
     Log::info("[PolarisEngine] All subsystems initialized");
 }
@@ -50,8 +51,8 @@ void PolarisEngine::initialize() {
 void PolarisEngine::shutdown() {
     Log::info("[PolarisEngine] Shutting down subsystems...");
 
-    // Shutdown in reverse order
-    ECSWorld::destroy_global_instance();
+    // Shutdown Runtime
+    Runtime::destroy_global_instance();
 
     Log::info("[PolarisEngine] Shutdown complete");
 }

@@ -7,7 +7,7 @@
 
 // Core singletons
 #include "core/Engine.h"
-#include "core/ECSWorld.h"
+#include "core/Runtime.h"
 #include "core/PipelineNode.h"
 #include "core/CompositionFactory.h"
 
@@ -25,7 +25,7 @@ namespace godot {
 inline void polaris_register_classes() {
     // Core singletons
     GDREGISTER_CLASS(Polaris::PolarisEngine);
-    GDREGISTER_CLASS(Polaris::ECSWorld);
+    GDREGISTER_CLASS(Polaris::Runtime);
 
     // Core nodes
     GDREGISTER_CLASS(Polaris::PipelineNode);
@@ -37,7 +37,7 @@ inline void polaris_register_classes() {
 
     UtilityFunctions::print("[Polaris] Framework classes registered");
 
-    // Create Engine singleton - this initializes ECSWorld internally
+    // Create Engine singleton - this initializes Runtime internally
     Polaris::PolarisEngine::create_global_instance();
 }
 
@@ -46,7 +46,7 @@ inline void polaris_register_classes() {
 // ============================================================================
 
 inline void polaris_unregister_classes() {
-    // Engine handles shutdown of all subsystems (including ECSWorld)
+    // Engine handles shutdown of all subsystems (including Runtime)
     Polaris::PolarisEngine::destroy_global_instance();
 }
 

@@ -1,6 +1,6 @@
 #include "CompositionFactory.h"
 #include "Engine.h"
-#include "ECSWorld.h"
+#include "Runtime.h"
 #include "util/Log.h"
 
 #include <godot_cpp/classes/engine.hpp>
@@ -154,10 +154,10 @@ void CompositionFactory::_on_node_added(Node* node) {
         return;
     }
 
-    // Get ECS world
-    ECSWorld* ecs = ECSWorld::get();
-    if (!ecs) {
-        Log::error("[CompositionFactory] ECSWorld singleton not available");
+    // Get Runtime
+    Runtime* rt = Runtime::get();
+    if (!rt) {
+        Log::error("[CompositionFactory] Runtime singleton not available");
         return;
     }
 
@@ -167,7 +167,7 @@ void CompositionFactory::_on_node_added(Node* node) {
     Log::info("[CompositionFactory] +++ Node added with composition: ", node_name, " (", node_class, ")");
 
     // Create flecs entity
-    flecs::entity entity = ecs->world().entity();
+    flecs::entity entity = rt->world().entity();
     uint64_t entity_id = entity.id();
 
     // Store entity ID on node
@@ -191,15 +191,15 @@ void CompositionFactory::_on_node_removed(Node* node) {
 
     Log::info("[CompositionFactory] --- Node removed with entity: ", node_name, " (entity #", id, ")");
 
-    // Get ECS world
-    ECSWorld* ecs = ECSWorld::get();
-    if (!ecs) {
-        Log::error("[CompositionFactory] ECSWorld singleton not available for cleanup");
+    // Get Runtime
+    Runtime* rt = Runtime::get();
+    if (!rt) {
+        Log::error("[CompositionFactory] Runtime singleton not available for cleanup");
         return;
     }
 
     // Get entity from world
-    flecs::entity entity = ecs->world().entity(id);
+    flecs::entity entity = rt->world().entity(id);
     if (entity.is_valid()) {
         // Call decompose if composition is still available
         if (node->has_meta("composition")) {

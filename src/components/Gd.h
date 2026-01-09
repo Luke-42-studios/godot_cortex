@@ -40,7 +40,7 @@ struct Node {
     void unbind() { root = nullptr; }
 
     // Basic node access
-    String get_name() const { return root ? root->get_name() : String(); }
+    String get_name() const { return root ? String(root->get_name()) : String(); }
     godot::Node* get_root() const { return root; }
 };
 
