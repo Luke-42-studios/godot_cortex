@@ -10,6 +10,9 @@ namespace Polaris {
 
 using namespace godot;
 
+// Callback type for mouse motion events
+using MouseDeltaCallback = void (*)(float dx, float dy);
+
 // =============================================================================
 // PipelineNode - Drives ECS pipelines from Godot frame callbacks
 // =============================================================================
@@ -37,12 +40,21 @@ private:
     uint64_t m_process_frame = 0;
     bool m_debug_enabled = false;
 
+    // Input callbacks (game code registers these)
+    static MouseDeltaCallback s_mouse_delta_callback;
+
 protected:
     static void _bind_methods();
 
 public:
     PipelineNode();
     ~PipelineNode();
+
+    // =========================================================================
+    // Input Callbacks (game code registers these)
+    // =========================================================================
+
+    static void set_mouse_delta_callback(MouseDeltaCallback cb) { s_mouse_delta_callback = cb; }
 
     // =========================================================================
     // Godot Lifecycle

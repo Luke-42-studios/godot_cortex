@@ -179,15 +179,9 @@ namespace Game {
 using namespace godot;
 using namespace Polaris;
 
-void PlayerPawn::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("get_max_health"), &PlayerPawn::get_max_health);
-    ClassDB::bind_method(D_METHOD("set_max_health", "value"), &PlayerPawn::set_max_health);
-
-    ADD_PROPERTY(
-        PropertyInfo(Variant::FLOAT, "max_health", PROPERTY_HINT_RANGE, "1,1000,1"),
-        "set_max_health", "get_max_health"
-    );
-}
+// =============================================================================
+// Composition Lifecycle (main logic - comes first for readability)
+// =============================================================================
 
 void PlayerPawn::compose(flecs::entity e, Node* root) {
     // Call parent — sets Gd::Node + Gd::Node3D for 3D nodes
@@ -217,6 +211,20 @@ void PlayerPawn::decompose(flecs::entity e) {
     Composition::decompose(e);
 
     Log::info("[PlayerPawn] Decomposed entity");
+}
+
+// =============================================================================
+// Godot Bindings (boilerplate - comes last)
+// =============================================================================
+
+void PlayerPawn::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("get_max_health"), &PlayerPawn::get_max_health);
+    ClassDB::bind_method(D_METHOD("set_max_health", "value"), &PlayerPawn::set_max_health);
+
+    ADD_PROPERTY(
+        PropertyInfo(Variant::FLOAT, "max_health", PROPERTY_HINT_RANGE, "1,1000,1"),
+        "set_max_health", "get_max_health"
+    );
 }
 
 }
@@ -353,19 +361,24 @@ Now that you have an entity, you can:
 To move your player with physics, create a movement system using the CharacterController:
 
 ```cpp
-// In your game initialization
-flecs::world& world = ECSWorld::get()->world();
+// Named function — clean and readable
+static void apply_gravity(flecs::iter& it, size_t i,
+                          Gd::Physics::CharacterController& controller,
+                          const Health& hp) {
+    if (!controller.is_valid() || !hp.is_alive()) return;
+    float dt = it.delta_time();
+    Vector3 vel = controller.get_velocity();
+    vel.y -= 9.8f * dt;
+    controller.set_velocity(vel);
+    controller.move_and_slide();
+}
 
-world.system<Gd::Physics::CharacterController, Health>()
-    .each([](Gd::Physics::CharacterController& controller, Health& hp) {
-        if (controller.is_valid() && hp.is_alive()) {
-            // Apply gravity and move
-            Vector3 vel = controller.get_velocity();
-            vel.y -= 9.8f * 0.016f;  // gravity * delta
-            controller.set_velocity(vel);
-            controller.move_and_slide();
-        }
-    });
+// In your game initialization
+void init(Runtime* rt) {
+    rt->world().system<Gd::Physics::CharacterController, const Health>("ApplyGravity")
+        .kind(rt->get_phase(Phase_Physics).id)
+        .each(apply_gravity);
+}
 ```
 
 ---

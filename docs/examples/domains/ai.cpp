@@ -45,128 +45,125 @@ struct AIComponent {
 // ============================================================================
 // Systems (static = private to this file)
 // ============================================================================
+// flecs .each() callback signatures:
+//   (Components&...)                        - just components
+//   (flecs::entity, Components&...)         - need entity access
+//   (flecs::iter&, size_t, Components&...)  - need delta_time
 
 // --- Sense Phase ---
 
-static void target_acquisition(flecs::iter& it, AIComponent* ai, Gd::Node3D* node) {
-    for (auto i : it) {
-        if (!node[i].is_valid()) continue;
+static void target_acquisition(AIComponent& ai, Gd::Node3D& node) {
+    if (!node.is_valid()) return;
 
-        // Already has a valid target
-        if (ai[i].target.is_alive()) continue;
+    // Already has a valid target
+    if (ai.target.is_alive()) return;
 
-        godot::Vector3 pos = node[i].get_position();
+    godot::Vector3 pos = node.get_position();
 
-        // Find nearest player within aggro range
-        runtime()->world.each<Tag::Player, Gd::Node3D>(
-            [&](flecs::entity player, Tag::Player, Gd::Node3D& player_node) {
-                if (!player_node.is_valid()) return;
+    // Find nearest player within aggro range
+    runtime()->world().each<Tag::Player, Gd::Node3D>(
+        [&](flecs::entity player, Tag::Player, Gd::Node3D& player_node) {
+            if (!player_node.is_valid()) return;
 
-                float dist = pos.distance_to(player_node.get_position());
-                if (dist < ai[i].aggro_range) {
-                    ai[i].target = player;
-                    ai[i].state = AIState::Chase;
-                }
+            float dist = pos.distance_to(player_node.get_position());
+            if (dist < ai.aggro_range) {
+                ai.target = player;
+                ai.state = AIState::Chase;
             }
-        );
-    }
+        }
+    );
 }
 
 // --- Decide Phase ---
+// Uses iter signature for delta_time access
 
-static void state_machine(flecs::iter& it, AIComponent* ai, Gd::Node3D* node) {
+static void state_machine(flecs::iter& it, size_t i, AIComponent& ai, Gd::Node3D& node) {
+    if (!node.is_valid()) return;
+
     float dt = it.delta_time();
+    ai.timer -= dt;
 
-    for (auto i : it) {
-        if (!node[i].is_valid()) continue;
+    switch (ai.state) {
+        case AIState::Idle:
+            if (ai.timer <= 0) {
+                ai.state = AIState::Patrol;
+                ai.timer = 5.0f;
+            }
+            break;
 
-        ai[i].timer -= dt;
+        case AIState::Patrol:
+            if (ai.timer <= 0) {
+                ai.state = AIState::Idle;
+                ai.timer = 2.0f;
+            }
+            break;
 
-        switch (ai[i].state) {
-            case AIState::Idle:
-                if (ai[i].timer <= 0) {
-                    ai[i].state = AIState::Patrol;
-                    ai[i].timer = 5.0f;
-                }
-                break;
-
-            case AIState::Patrol:
-                if (ai[i].timer <= 0) {
-                    ai[i].state = AIState::Idle;
-                    ai[i].timer = 2.0f;
-                }
-                break;
-
-            case AIState::Chase:
-                if (!ai[i].target.is_alive()) {
-                    ai[i].state = AIState::Idle;
-                    ai[i].timer = 1.0f;
-                } else {
-                    // Check distance to target
-                    auto* target_node = ai[i].target.get<Gd::Node3D>();
-                    if (target_node && target_node->is_valid()) {
-                        float dist = node[i].get_position().distance_to(
-                            target_node->get_position()
-                        );
-                        if (dist < ai[i].attack_range) {
-                            ai[i].state = AIState::Attack;
-                            ai[i].timer = 1.0f;
-                        }
+        case AIState::Chase:
+            if (!ai.target.is_alive()) {
+                ai.state = AIState::Idle;
+                ai.timer = 1.0f;
+            } else {
+                // Check distance to target
+                auto* target_node = ai.target.get<Gd::Node3D>();
+                if (target_node && target_node->is_valid()) {
+                    float dist = node.get_position().distance_to(
+                        target_node->get_position()
+                    );
+                    if (dist < ai.attack_range) {
+                        ai.state = AIState::Attack;
+                        ai.timer = 1.0f;
                     }
                 }
-                break;
+            }
+            break;
 
-            case AIState::Attack:
-                if (ai[i].timer <= 0) {
-                    ai[i].state = AIState::Chase;
-                    ai[i].timer = 0.5f;
-                }
-                break;
-        }
+        case AIState::Attack:
+            if (ai.timer <= 0) {
+                ai.state = AIState::Chase;
+                ai.timer = 0.5f;
+            }
+            break;
     }
 }
 
 // --- Act Phase ---
 
-static void ai_movement(flecs::iter& it,
-                        AIComponent* ai,
-                        MoveSpeed* speed,
-                        Velocity* vel,
-                        Gd::Node3D* node)
+static void ai_movement(const AIComponent& ai,
+                        const MoveSpeed& speed,
+                        Velocity& vel,
+                        Gd::Node3D& node)
 {
-    for (auto i : it) {
-        if (!node[i].is_valid()) continue;
+    if (!node.is_valid()) return;
 
-        switch (ai[i].state) {
-            case AIState::Idle:
-                vel[i].linear.x = 0;
-                vel[i].linear.z = 0;
-                break;
+    switch (ai.state) {
+        case AIState::Idle:
+            vel.linear.x = 0;
+            vel.linear.z = 0;
+            break;
 
-            case AIState::Patrol:
-                vel[i].linear.x = speed[i].value * 0.5f;
-                vel[i].linear.z = 0;
-                break;
+        case AIState::Patrol:
+            vel.linear.x = speed.value * 0.5f;
+            vel.linear.z = 0;
+            break;
 
-            case AIState::Chase:
-                if (ai[i].target.is_alive()) {
-                    auto* target_node = ai[i].target.get<Gd::Node3D>();
-                    if (target_node && target_node->is_valid()) {
-                        godot::Vector3 dir = target_node->get_position() -
-                                             node[i].get_position();
-                        dir.y = 0;
-                        dir = dir.normalized();
-                        vel[i].linear.x = dir.x * speed[i].value;
-                        vel[i].linear.z = dir.z * speed[i].value;
-                    }
+        case AIState::Chase:
+            if (ai.target.is_alive()) {
+                auto* target_node = ai.target.get<Gd::Node3D>();
+                if (target_node && target_node->is_valid()) {
+                    godot::Vector3 dir = target_node->get_position() -
+                                         node.get_position();
+                    dir.y = 0;
+                    dir = dir.normalized();
+                    vel.linear.x = dir.x * speed.value;
+                    vel.linear.z = dir.z * speed.value;
                 }
-                break;
+            }
+            break;
 
-            case AIState::Attack:
-                vel[i].linear.x = 0;
-                vel[i].linear.z = 0;
-                break;
-        }
+        case AIState::Attack:
+            vel.linear.x = 0;
+            vel.linear.z = 0;
+            break;
     }
 }
 
@@ -175,8 +172,8 @@ static void ai_movement(flecs::iter& it,
 // ============================================================================
 
 void init(Runtime* rt) {
-    flecs::world& world = rt->world;
-    flecs::entity physics = rt->phases[Phase_Physics].id;
+    flecs::world& w = rt->world();
+    flecs::entity physics = rt->get_phase(Phase_Physics).id;
 
     // -------------------------------------------------------------------------
     // Create sub-phases: Sense -> Decide -> Act
@@ -194,39 +191,39 @@ void init(Runtime* rt) {
     //   AI.Act    <-- Apply velocity based on state
     //
 
-    Phase::Sense = world.entity("AI.Sense")
+    Phase::Sense = w.entity("AI.Sense")
         .add(flecs::Phase)
         .depends_on(physics);
 
-    Phase::Decide = world.entity("AI.Decide")
+    Phase::Decide = w.entity("AI.Decide")
         .add(flecs::Phase)
         .depends_on(Phase::Sense);
 
-    Phase::Act = world.entity("AI.Act")
+    Phase::Act = w.entity("AI.Act")
         .add(flecs::Phase)
         .depends_on(Phase::Decide);
 
     // -------------------------------------------------------------------------
-    // Register systems to sub-phases
+    // Register systems with .each() and named functions
     // -------------------------------------------------------------------------
 
-    world.system<AIComponent, Gd::Node3D>("AITargetAcquisition")
+    w.system<AIComponent, Gd::Node3D>("AITargetAcquisition")
         .kind(Phase::Sense)
         .with<Tag::Enemy>()
         .without<Tag::Dead>()
-        .iter(target_acquisition);
+        .each(target_acquisition);
 
-    world.system<AIComponent, Gd::Node3D>("AIStateMachine")
+    w.system<AIComponent, Gd::Node3D>("AIStateMachine")
         .kind(Phase::Decide)
         .with<Tag::Enemy>()
         .without<Tag::Dead>()
-        .iter(state_machine);
+        .each(state_machine);
 
-    world.system<AIComponent, MoveSpeed, Velocity, Gd::Node3D>("AIMovement")
+    w.system<const AIComponent, const MoveSpeed, Velocity, Gd::Node3D>("AIMovement")
         .kind(Phase::Act)
         .with<Tag::Enemy>()
         .without<Tag::Dead>()
-        .iter(ai_movement);
+        .each(ai_movement);
 }
 
 } // namespace AI

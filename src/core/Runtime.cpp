@@ -42,9 +42,19 @@ Runtime::Runtime()
     m_phases[Phase_Process].arena = arena_create(512 * 1024);     // 512 KB
 
     // Create phase entities for system ordering
-    m_phases[Phase_Input].id = m_world.entity("Phase_Input");
-    m_phases[Phase_Physics].id = m_world.entity("Phase_Physics");
-    m_phases[Phase_Process].id = m_world.entity("Phase_Process");
+    // Systems register to phases with .kind(phase) and can create sub-phases
+    // that depend on these main phases for ordering within the phase
+    m_phases[Phase_Input].id = m_world.entity("Phase_Input")
+        .add(flecs::Phase)
+        .depends_on(flecs::OnUpdate);
+
+    m_phases[Phase_Physics].id = m_world.entity("Phase_Physics")
+        .add(flecs::Phase)
+        .depends_on(m_phases[Phase_Input].id);
+
+    m_phases[Phase_Process].id = m_world.entity("Phase_Process")
+        .add(flecs::Phase)
+        .depends_on(m_phases[Phase_Physics].id);
 
     Log::info("[Runtime] Initialized successfully");
     Log::info("[Runtime]   Input arena:   ", arena_remaining(&m_phases[Phase_Input].arena), " bytes");
@@ -79,18 +89,21 @@ int Runtime::get_entity_count() const {
 // =============================================================================
 
 void Runtime::tick(PhaseType phase, float delta) {
-    // Run all systems assigned to this phase
-    m_world.progress(delta);
-
-    // Reset phase arena for next frame
-    arena_reset(&m_phases[phase].arena);
-
-    // Update frame counters
+    // Only run ECS systems during physics phase
+    // The default flecs pipeline handles all phase dependencies correctly,
+    // including sub-phases created by game systems
+    //
+    // We only call progress() once per frame to prevent systems from
+    // running multiple times (input, physics, and process all call tick)
     if (phase == Phase_Physics) {
+        m_world.progress(delta);
         m_physics_frame++;
     } else if (phase == Phase_Process) {
         m_frame++;
     }
+
+    // Reset phase arena for next frame
+    arena_reset(&m_phases[phase].arena);
 }
 
 // =============================================================================

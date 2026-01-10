@@ -4,10 +4,14 @@
 #include "util/Log.h"
 
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/input_event_mouse_motion.hpp>
 
 namespace Polaris {
 
 using namespace godot;
+
+// Static callback storage
+MouseDeltaCallback PipelineNode::s_mouse_delta_callback = nullptr;
 
 // =============================================================================
 // Class Registration
@@ -62,33 +66,37 @@ void PipelineNode::_ready() {
 }
 
 void PipelineNode::_input(const Ref<InputEvent>& event) {
+    // Capture mouse motion for FPS camera
+    if (s_mouse_delta_callback) {
+        const InputEventMouseMotion* motion = Object::cast_to<InputEventMouseMotion>(*event);
+        if (motion) {
+            Vector2 rel = motion->get_relative();
+            s_mouse_delta_callback(rel.x, rel.y);
+        }
+    }
+
     Runtime* rt = Runtime::get();
     if (rt) {
         rt->tick(Phase_Input, 0.0f);
     }
-    Log::print(m_debug_enabled, "[PipelineNode] _input()");
 }
 
 void PipelineNode::_physics_process(double delta) {
     m_physics_frame++;
-    
+
     Runtime* rt = Runtime::get();
     if (rt) {
         rt->tick(Phase_Physics, (float)delta);
     }
-    
-    Log::print(m_debug_enabled, "[PipelineNode] _physics_process(", delta, ") frame=", m_physics_frame);
 }
 
 void PipelineNode::_process(double delta) {
     m_process_frame++;
-    
+
     Runtime* rt = Runtime::get();
     if (rt) {
         rt->tick(Phase_Process, (float)delta);
     }
-    
-    Log::print(m_debug_enabled, "[PipelineNode] _process(", delta, ") frame=", m_process_frame);
 }
 
 } // namespace Polaris

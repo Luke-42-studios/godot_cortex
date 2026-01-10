@@ -27,24 +27,24 @@ struct InputState {
 // ============================================================================
 // Systems (static = private to this file)
 // ============================================================================
+// Simple .each() callback - just components, no entity or iter needed
 
-static void capture_player_input(flecs::iter& it, InputState* input) {
-    godot::Input* godot_input = godot::Input::get_singleton();
+static void capture_player_input(InputState& input) {
+    godot::Input* gd = godot::Input::get_singleton();
+    if (!gd) return;
 
-    for (auto i : it) {
-        // Movement (WASD / stick)
-        input[i].move = godot_input->get_vector(
-            "move_left", "move_right", "move_forward", "move_back"
-        );
+    // Movement (WASD / stick)
+    input.move = gd->get_vector(
+        "move_left", "move_right", "move_forward", "move_back"
+    );
 
-        // Look (mouse / right stick)
-        input[i].look = godot_input->get_last_mouse_velocity() * 0.001f;
+    // Look (mouse / right stick)
+    input.look = gd->get_last_mouse_velocity() * 0.001f;
 
-        // Actions (just-pressed for single triggers)
-        input[i].jump = godot_input->is_action_just_pressed("jump");
-        input[i].attack = godot_input->is_action_just_pressed("attack");
-        input[i].interact = godot_input->is_action_just_pressed("interact");
-    }
+    // Actions (just-pressed for single triggers)
+    input.jump = gd->is_action_just_pressed("jump");
+    input.attack = gd->is_action_just_pressed("attack");
+    input.interact = gd->is_action_just_pressed("interact");
 }
 
 // ============================================================================
@@ -52,14 +52,14 @@ static void capture_player_input(flecs::iter& it, InputState* input) {
 // ============================================================================
 
 void init(Runtime* rt) {
-    flecs::world& world = rt->world;
-    flecs::entity input_phase = rt->phases[Phase_Input].id;
+    flecs::world& w = rt->world();
+    flecs::entity input_phase = rt->get_phase(Phase_Input).id;
 
     // Only process player-controlled entities
-    world.system<InputState>("CapturePlayerInput")
+    w.system<InputState>("CapturePlayerInput")
         .kind(input_phase)
         .with<Tag::Player>()
-        .iter(capture_player_input);
+        .each(capture_player_input);
 }
 
 } // namespace Input

@@ -27,8 +27,8 @@ enum PhaseType {
 // =============================================================================
 
 struct Phase {
-    Arena arena;        // Temporary memory for this phase (resets after phase)
-    flecs::entity id;   // Flecs entity for system ordering
+    Arena arena;            // Temporary memory for this phase (resets after phase)
+    flecs::entity id;       // Flecs phase entity for system ordering
 };
 
 // =============================================================================

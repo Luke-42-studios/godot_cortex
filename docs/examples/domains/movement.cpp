@@ -53,79 +53,60 @@ struct InputState {
 // ============================================================================
 // Systems (static = private to this file)
 // ============================================================================
+// flecs .each() callback signatures:
+//   (Components&...)                        - just components
+//   (flecs::entity, Components&...)         - need entity access
+//   (flecs::iter&, size_t, Components&...)  - need delta_time
 
-static void player_movement(flecs::iter& it,
-                            InputState* input,
-                            MoveSpeed* speed,
-                            Velocity* vel,
-                            Gd::Node3D* node)
+static void player_movement(flecs::entity e,
+                            const InputState& input,
+                            const MoveSpeed& speed,
+                            Velocity& vel,
+                            Gd::Node3D& node)
 {
-    for (auto i : it) {
-        if (!node[i].is_valid()) continue;
+    if (!node.is_valid()) return;
 
-        // Get camera-relative directions
-        godot::Vector3 forward = node[i].get_forward();
-        godot::Vector3 right = forward.cross(godot::Vector3(0, 1, 0));
-        forward.y = 0; forward = forward.normalized();
-        right.y = 0; right = right.normalized();
+    // Get camera-relative directions
+    godot::Vector3 forward = node.get_forward();
+    godot::Vector3 right = forward.cross(godot::Vector3(0, 1, 0));
+    forward.y = 0; forward = forward.normalized();
+    right.y = 0; right = right.normalized();
 
-        // Apply input to velocity
-        godot::Vector3 dir = forward * input[i].move.y + right * input[i].move.x;
-        vel[i].linear.x = dir.x * speed[i].value;
-        vel[i].linear.z = dir.z * speed[i].value;
+    // Apply input to velocity
+    godot::Vector3 dir = forward * input.move.y + right * input.move.x;
+    vel.linear.x = dir.x * speed.value;
+    vel.linear.z = dir.z * speed.value;
 
-        // Handle jump
-        if (input[i].jump && it.entity(i).has<Tag::Grounded>()) {
-            vel[i].linear.y = 5.0f;
-        }
+    // Handle jump (grounded check via .with<Tag::Grounded>() on separate system)
+    if (input.jump && e.has<Tag::Grounded>()) {
+        vel.linear.y = 5.0f;
     }
 }
 
-static void apply_gravity(flecs::iter& it, Velocity* vel) {
+// Uses iter signature for delta_time access
+static void apply_gravity(flecs::iter& it, size_t i, Velocity& vel) {
     const float gravity = -9.8f;
-    float dt = it.delta_time();
-
-    for (auto i : it) {
-        if (!it.entity(i).has<Tag::Grounded>()) {
-            vel[i].linear.y += gravity * dt;
-        }
-    }
+    vel.linear.y += gravity * it.delta_time();
 }
 
-static void apply_velocity(flecs::iter& it,
-                           Velocity* vel,
-                           Gd::CharacterBody3D* body)
-{
-    for (auto i : it) {
-        if (!body[i].is_valid()) continue;
-
-        body[i].ptr->set_velocity(vel[i].linear);
-        body[i].ptr->move_and_slide();
-    }
+static void apply_velocity(const Velocity& vel, Gd::CharacterBody3D& body) {
+    if (!body.is_valid()) return;
+    body.set_velocity(vel.linear);
+    body.move_and_slide();
 }
 
-static void resolve_velocity(flecs::iter& it,
-                             Velocity* vel,
-                             Gd::CharacterBody3D* body)
-{
-    for (auto i : it) {
-        if (!body[i].is_valid()) continue;
-
-        // Read back actual velocity after collision
-        vel[i].linear = body[i].ptr->get_velocity();
-    }
+static void resolve_velocity(Velocity& vel, Gd::CharacterBody3D& body) {
+    if (!body.is_valid()) return;
+    vel.linear = body.get_velocity();
 }
 
-static void check_grounded(flecs::iter& it, Gd::CharacterBody3D* body) {
-    for (auto i : it) {
-        if (!body[i].is_valid()) continue;
+static void check_grounded(flecs::entity e, Gd::CharacterBody3D& body) {
+    if (!body.is_valid()) return;
 
-        flecs::entity e = it.entity(i);
-        if (body[i].ptr->is_on_floor()) {
-            e.add<Tag::Grounded>();
-        } else {
-            e.remove<Tag::Grounded>();
-        }
+    if (body.is_on_floor()) {
+        e.add<Tag::Grounded>();
+    } else {
+        e.remove<Tag::Grounded>();
     }
 }
 
@@ -134,8 +115,8 @@ static void check_grounded(flecs::iter& it, Gd::CharacterBody3D* body) {
 // ============================================================================
 
 void init(Runtime* rt) {
-    flecs::world& world = rt->world;
-    flecs::entity physics = rt->phases[Phase_Physics].id;
+    flecs::world& w = rt->world();
+    flecs::entity physics = rt->get_phase(Phase_Physics).id;
 
     // -------------------------------------------------------------------------
     // Create sub-phases with explicit dependencies
@@ -153,45 +134,46 @@ void init(Runtime* rt) {
     //   Movement.Resolve <-- Read collision results, check grounded
     //
 
-    Phase::Input = world.entity("Movement.Input")
+    Phase::Input = w.entity("Movement.Input")
         .add(flecs::Phase)
         .depends_on(physics);
 
-    Phase::Apply = world.entity("Movement.Apply")
+    Phase::Apply = w.entity("Movement.Apply")
         .add(flecs::Phase)
         .depends_on(Phase::Input);
 
-    Phase::Resolve = world.entity("Movement.Resolve")
+    Phase::Resolve = w.entity("Movement.Resolve")
         .add(flecs::Phase)
         .depends_on(Phase::Apply);
 
     // -------------------------------------------------------------------------
-    // Register systems to sub-phases
+    // Register systems with .each() and named functions
     // -------------------------------------------------------------------------
 
     // Movement.Input - Calculate intent
-    world.system<InputState, MoveSpeed, Velocity, Gd::Node3D>("PlayerMovement")
+    w.system<const InputState, const MoveSpeed, Velocity, Gd::Node3D>("PlayerMovement")
         .kind(Phase::Input)
         .with<Tag::Player>()
-        .iter(player_movement);
+        .each(player_movement);
 
-    // Movement.Apply - Physics forces
-    world.system<Velocity>("ApplyGravity")
+    // Movement.Apply - Physics forces (gravity only for airborne)
+    w.system<Velocity>("ApplyGravity")
         .kind(Phase::Apply)
-        .iter(apply_gravity);
+        .without<Tag::Grounded>()  // Filter at query level
+        .each(apply_gravity);
 
-    world.system<Velocity, Gd::CharacterBody3D>("ApplyVelocity")
+    w.system<const Velocity, Gd::CharacterBody3D>("ApplyVelocity")
         .kind(Phase::Apply)
-        .iter(apply_velocity);
+        .each(apply_velocity);
 
     // Movement.Resolve - Read results
-    world.system<Velocity, Gd::CharacterBody3D>("ResolveVelocity")
+    w.system<Velocity, Gd::CharacterBody3D>("ResolveVelocity")
         .kind(Phase::Resolve)
-        .iter(resolve_velocity);
+        .each(resolve_velocity);
 
-    world.system<Gd::CharacterBody3D>("CheckGrounded")
+    w.system<Gd::CharacterBody3D>("CheckGrounded")
         .kind(Phase::Resolve)
-        .iter(check_grounded);
+        .each(check_grounded);
 }
 
 } // namespace Movement

@@ -131,6 +131,10 @@ protected:
     float move_speed = 5.0f;
 
 public:
+    // -------------------------------------------------------------------------
+    // Composition Lifecycle (comes FIRST - this is the main logic)
+    // -------------------------------------------------------------------------
+
     // Called when node enters scene tree
     void compose(flecs::entity e, godot::Node* node) override {
         // Base Composition sets Gd::Node (auto-detected)
@@ -158,6 +162,10 @@ public:
         Polaris::Composition::decompose(e);
     }
 
+    // -------------------------------------------------------------------------
+    // Godot Bindings (comes LAST - boilerplate)
+    // -------------------------------------------------------------------------
+
 protected:
     static void _bind_methods() {
         // Expose properties to Godot inspector
@@ -184,6 +192,7 @@ class PlayerPawn : public Pawn {
     GDCLASS(PlayerPawn, Pawn)
 
 public:
+    // Composition Lifecycle
     void compose(flecs::entity e, godot::Node* node) override {
         // Call base to set up common components
         Pawn::compose(e, node);
@@ -197,6 +206,7 @@ public:
         if (speed) speed->value = move_speed * 1.2f;  // Players move faster
     }
 
+    // Godot Bindings
 protected:
     static void _bind_methods() {
         // Inherit parent properties
@@ -215,6 +225,7 @@ protected:
     float patrol_radius = 5.0f;
 
 public:
+    // Composition Lifecycle
     void compose(flecs::entity e, godot::Node* node) override {
         // Call base to set up common components
         Pawn::compose(e, node);
@@ -236,6 +247,7 @@ public:
         }
     }
 
+    // Godot Bindings
 protected:
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("get_aggro_range"), &AIPawn::get_aggro_range);

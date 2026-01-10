@@ -280,10 +280,7 @@ public:
 
 namespace Game {
 
-void Pawn::_bind_methods() {
-    // Bind all properties to inspector
-}
-
+// Composition Lifecycle (main logic - comes first)
 void Pawn::compose(flecs::entity e, godot::Node* node) {
     Polaris::Composition::compose(e, node);
 
@@ -306,6 +303,11 @@ void Pawn::decompose(flecs::entity e) {
     if (auto* n = e.get_mut<Polaris::Gd::Node3D>()) n->unbind();
     if (auto* b = e.get_mut<Polaris::Gd::CharacterBody3D>()) b->unbind();
     Polaris::Composition::decompose(e);
+}
+
+// Godot Bindings (boilerplate - comes last)
+void Pawn::_bind_methods() {
+    // Bind all properties to inspector
 }
 
 } // namespace Game
@@ -357,10 +359,7 @@ public:
 
 namespace Game {
 
-void PlayerPawn::_bind_methods() {
-    // Bind sensitivity, invert_y, autohop, bhop_* properties
-}
-
+// Composition Lifecycle (main logic - comes first)
 void PlayerPawn::compose(flecs::entity e, godot::Node* node) {
     Pawn::compose(e, node);  // Base setup
 
@@ -381,6 +380,11 @@ void PlayerPawn::compose(flecs::entity e, godot::Node* node) {
 void PlayerPawn::decompose(flecs::entity e) {
     if (auto* c = e.get_mut<Polaris::Gd::Camera3D>()) c->unbind();
     Pawn::decompose(e);
+}
+
+// Godot Bindings (boilerplate - comes last)
+void PlayerPawn::_bind_methods() {
+    // Bind sensitivity, invert_y, autohop, bhop_* properties
 }
 
 } // namespace Game
@@ -468,27 +472,27 @@ void init(Runtime* rt) {
 
     // Input capture
     w.system<PlayerInputState>("CapturePlayerInput")
-        .kind(physics).with<Tag::Player>().iter(capture_input);
+        .kind(physics).with<Tag::Player>().each(capture_input);
 
     // Input phase
     w.system<PlayerInputState, PlayerLook, Gd::Node3D, Gd::Camera3D>("PlayerLook")
-        .kind(Phase::Input).with<Tag::Player>().iter(look_system);
+        .kind(Phase::Input).with<Tag::Player>().each(look);
     w.system<Velocity, const PawnMovement>("PlayerFriction")
-        .kind(Phase::Input).with<Tag::Player>().iter(friction_system);
+        .kind(Phase::Input).with<Tag::Player>().with<Tag::Grounded>().each(friction);
     w.system<const PlayerInputState, Velocity, const PawnMovement, const PlayerLook>("PlayerAccel")
-        .kind(Phase::Input).with<Tag::Player>().iter(accel_system);
+        .kind(Phase::Input).with<Tag::Player>().each(accelerate);
 
     // Apply phase
     w.system<Velocity, const PawnMovement>("PlayerGravity")
-        .kind(Phase::Apply).with<Tag::Player>().iter(gravity_system);
+        .kind(Phase::Apply).with<Tag::Player>().without<Tag::Grounded>().each(gravity);
     w.system<const PlayerInputState, Velocity, const PawnMovement, const PlayerBunnyHop>("PlayerJump")
-        .kind(Phase::Apply).with<Tag::Player>().iter(jump_system);
+        .kind(Phase::Apply).with<Tag::Player>().with<Tag::Grounded>().each(jump);
     w.system<const Velocity, Gd::CharacterBody3D>("PlayerApply")
-        .kind(Phase::Apply).with<Tag::Player>().iter(apply_system);
+        .kind(Phase::Apply).with<Tag::Player>().each(apply);
 
     // Resolve phase
     w.system<Velocity, Gd::CharacterBody3D>("PlayerResolve")
-        .kind(Phase::Resolve).with<Tag::Player>().iter(resolve_system);
+        .kind(Phase::Resolve).with<Tag::Player>().each(resolve);
 }
 
 } // namespace Game::PlayerSystems

@@ -27,32 +27,29 @@ struct DamageQueue {
 // ============================================================================
 // Systems (static = private to this file)
 // ============================================================================
+// flecs .each() callback signatures:
+//   (Components&...)                        - just components
+//   (flecs::entity, Components&...)         - need entity access
+//   (flecs::iter&, size_t, Components&...)  - need delta_time
 
-static void apply_damage(flecs::iter& it, Health* hp, DamageQueue* dmg) {
-    for (auto i : it) {
-        if (dmg[i].pending > 0) {
-            hp[i].current -= dmg[i].pending;
-            dmg[i].pending = 0;  // Clear queue
-        }
+static void apply_damage(Health& hp, DamageQueue& dmg) {
+    if (dmg.pending > 0) {
+        hp.current -= dmg.pending;
+        dmg.pending = 0;  // Clear queue
     }
 }
 
-static void check_death(flecs::iter& it, Health* hp) {
-    for (auto i : it) {
-        if (hp[i].current <= 0) {
-            it.entity(i).add<Tag::Dead>();
-        }
+static void check_death(flecs::entity e, Health& hp) {
+    if (hp.current <= 0) {
+        e.add<Tag::Dead>();
     }
 }
 
-static void health_regen(flecs::iter& it, Health* hp) {
-    float dt = it.delta_time();
+// Uses iter signature for delta_time access
+static void health_regen(flecs::iter& it, size_t i, Health& hp) {
     const float regen_rate = 1.0f;  // HP per second
-
-    for (auto i : it) {
-        if (hp[i].current < hp[i].max) {
-            hp[i].current = fminf(hp[i].current + regen_rate * dt, hp[i].max);
-        }
+    if (hp.current < hp.max) {
+        hp.current = fminf(hp.current + regen_rate * it.delta_time(), hp.max);
     }
 }
 
@@ -64,23 +61,23 @@ static void health_regen(flecs::iter& it, Health* hp) {
 // Order is handled by registration within this function.
 
 void init(Runtime* rt) {
-    flecs::world& world = rt->world;
-    flecs::entity physics = rt->phases[Phase_Physics].id;
+    flecs::world& w = rt->world();
+    flecs::entity physics = rt->get_phase(Phase_Physics).id;
 
     // Systems run in registration order within the phase
-    world.system<Health, DamageQueue>("ApplyDamage")
+    w.system<Health, DamageQueue>("ApplyDamage")
         .kind(physics)
-        .iter(apply_damage);
+        .each(apply_damage);
 
-    world.system<Health>("CheckDeath")
+    w.system<Health>("CheckDeath")
         .kind(physics)
         .without<Tag::Dead>()
-        .iter(check_death);
+        .each(check_death);
 
-    world.system<Health>("HealthRegen")
+    w.system<Health>("HealthRegen")
         .kind(physics)
         .without<Tag::Dead>()
-        .iter(health_regen);
+        .each(health_regen);
 }
 
 } // namespace Combat

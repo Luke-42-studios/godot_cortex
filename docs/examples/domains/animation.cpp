@@ -14,30 +14,24 @@ namespace Animation {
 // ============================================================================
 // Systems (static = private to this file)
 // ============================================================================
+// Simple .each() callbacks with reference parameters
 
-static void update_locomotion(flecs::iter& it,
-                              Velocity* vel,
-                              Gd::AnimationPlayer* anim)
-{
-    for (auto i : it) {
-        if (!anim[i].is_valid()) continue;
+static void update_locomotion(const Velocity& vel, Gd::AnimationPlayer& anim) {
+    if (!anim.is_valid()) return;
 
-        float speed = vel[i].linear.length();
-        if (speed > 0.1f) {
-            anim[i].ptr->play("walk");
-        } else {
-            anim[i].ptr->play("idle");
-        }
+    float speed = vel.linear.length();
+    if (speed > 0.1f) {
+        anim.play("walk");
+    } else {
+        anim.play("idle");
     }
 }
 
-static void update_death(flecs::iter& it, Gd::AnimationPlayer* anim) {
-    for (auto i : it) {
-        if (!anim[i].is_valid()) continue;
+static void update_death(Gd::AnimationPlayer& anim) {
+    if (!anim.is_valid()) return;
 
-        if (anim[i].ptr->get_current_animation() != "death") {
-            anim[i].ptr->play("death");
-        }
+    if (anim.get_current_animation() != "death") {
+        anim.play("death");
     }
 }
 
@@ -49,20 +43,20 @@ static void update_death(flecs::iter& it, Gd::AnimationPlayer* anim) {
 // No ordering concerns - just play the right animation.
 
 void init(Runtime* rt) {
-    flecs::world& world = rt->world;
-    flecs::entity process = rt->phases[Phase_Process].id;
+    flecs::world& w = rt->world();
+    flecs::entity process = rt->get_phase(Phase_Process).id;
 
     // Locomotion animation (living entities)
-    world.system<Velocity, Gd::AnimationPlayer>("UpdateLocomotion")
+    w.system<const Velocity, Gd::AnimationPlayer>("UpdateLocomotion")
         .kind(process)
         .without<Tag::Dead>()
-        .iter(update_locomotion);
+        .each(update_locomotion);
 
     // Death animation (dead entities)
-    world.system<Gd::AnimationPlayer>("UpdateDeath")
+    w.system<Gd::AnimationPlayer>("UpdateDeath")
         .kind(process)
         .with<Tag::Dead>()
-        .iter(update_death);
+        .each(update_death);
 }
 
 } // namespace Animation
