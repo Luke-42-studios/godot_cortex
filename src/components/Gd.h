@@ -6,6 +6,8 @@
 #include <godot_cpp/classes/node2d.hpp>
 #include <godot_cpp/classes/character_body3d.hpp>
 #include <godot_cpp/classes/camera3d.hpp>
+#include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/classes/shape3d.hpp>
 #include <godot_cpp/classes/object.hpp>
 
 namespace Polaris {
@@ -153,6 +155,32 @@ struct Camera3D {
 
     void make_current() { if (ptr) ptr->make_current(); }
     bool is_current() const { return ptr ? ptr->is_current() : false; }
+};
+
+// -----------------------------------------------------------------------------
+// CollisionShape3D - Collision shape for physics bodies
+// -----------------------------------------------------------------------------
+// Use for entities that need dynamic collision shape resizing (e.g., crouch).
+
+struct CollisionShape3D {
+    godot::CollisionShape3D* ptr = nullptr;
+
+    static CollisionShape3D create(godot::CollisionShape3D* p) { return { p }; }
+
+    static CollisionShape3D create(godot::Node* n) {
+        return { Object::cast_to<godot::CollisionShape3D>(n) };
+    }
+
+    bool is_valid() const { return ptr != nullptr; }
+    void unbind() { ptr = nullptr; }
+
+    // Shape access
+    Ref<Shape3D> get_shape() const { return ptr ? ptr->get_shape() : Ref<Shape3D>(); }
+    void set_shape(const Ref<Shape3D>& shape) { if (ptr) ptr->set_shape(shape); }
+
+    // Transform helpers
+    Vector3 get_position() const { return ptr ? ptr->get_position() : Vector3(); }
+    void set_position(const Vector3& p) { if (ptr) ptr->set_position(p); }
 };
 
 } // namespace Gd
