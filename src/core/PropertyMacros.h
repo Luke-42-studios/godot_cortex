@@ -11,9 +11,9 @@
 // PURPOSE: Define properties once, generate accessors and bindings automatically.
 //
 // USAGE:
-//   1. Define X-macro with property metadata:
-//      #define MY_PROPS(X, ...) \
-//          X(field_name, cpp_type, GODOT_TYPE, "inspector/path", "hint", __VA_ARGS__)
+//   1. Define X-macro with property metadata (uses explicit args for MSVC):
+//      #define MY_PROPS(X, C, M) \
+//          X(field_name, cpp_type, GODOT_TYPE, "inspector/path", "hint", C, M)
 //
 //   2. In class declaration, generate accessors:
 //      POLARIS_ACCESSORS(ComponentType, m_member, MY_PROPS)
@@ -40,10 +40,10 @@
 //       float pitch{};
 //   };
 //
-//   // X-macro - define once
-//   #define PLAYER_LOOK_PROPS(X, ...) \
-//       X(sensitivity_pct, float, FLOAT, "look/sensitivity", "", __VA_ARGS__) \
-//       X(invert_y,        bool,  BOOL,  "look/invert_y",    "", __VA_ARGS__)
+//   // X-macro - define once (C=Component type, M=member variable)
+//   #define PLAYER_LOOK_PROPS(X, C, M) \
+//       X(sensitivity_pct, float, FLOAT, "look/sensitivity", "", C, M) \
+//       X(invert_y,        bool,  BOOL,  "look/invert_y",    "", C, M)
 //
 //   // In class - generates accessors
 //   class PlayerPawn : public Pawn {
@@ -89,7 +89,7 @@
 //   ClassDB::bind_method(D_METHOD("get_name"), &Class::get_name);
 //   ADD_PROPERTY(PropertyInfo(...), "set_name", "get_name");
 
-#define POLARIS_BIND_(name, type, vtype, path, hint, Class) \
+#define POLARIS_BIND_(name, type, vtype, path, hint, Class, _ignored_) \
     godot::ClassDB::bind_method(godot::D_METHOD("set_" #name, "v"), &Class::set_##name); \
     godot::ClassDB::bind_method(godot::D_METHOD("get_" #name), &Class::get_##name); \
     ADD_PROPERTY(godot::PropertyInfo(godot::Variant::vtype, path, \
@@ -97,6 +97,6 @@
         "set_" #name, "get_" #name);
 
 #define POLARIS_BIND(Class, PROPS) \
-    PROPS(POLARIS_BIND_, Class)
+    PROPS(POLARIS_BIND_, Class, _)
 
 #endif // POLARIS_PROPERTY_MACROS_H
