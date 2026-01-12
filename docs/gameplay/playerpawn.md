@@ -108,31 +108,65 @@ namespace Tag {
 
 ### Player-specific - `pawn/player/PlayerComponents.h`
 
+Uses **Config/State separation**: Config structs are inspector-bound and serialized; State structs hold runtime data.
+
 ```cpp
-// Input from keyboard/mouse
-struct PlayerInputState {
-    godot::Vector2 move;        // WASD normalized
-    godot::Vector2 look_delta;  // Mouse motion
-    bool jump_pressed;          // Just pressed
-    bool jump_held;             // Currently held
-};
+// ==========================================
+// Look - Camera rotation
+// ==========================================
 
-// Camera rotation
+// Config: Inspector values (editor units)
 struct PlayerLook {
-    float yaw;          // Body rotation
-    float pitch;        // Camera rotation (+/-89 deg)
-    float sensitivity;  // Mouse sensitivity
-    bool invert_y;
+    float sensitivity_pct{};    // 0-100 percentage
+    bool invert_y{};
 };
 
-// Bunny hop config
+// State: Runtime values
+struct PlayerLookState {
+    float yaw{};
+    float pitch{};
+};
+
+// X-macro for POLARIS_ACCESSORS/BIND
+#define PLAYER_LOOK_PROPS(X, C, M) \
+    X(sensitivity_pct, float, FLOAT, "look/sensitivity", "", C, M) \
+    X(invert_y,        bool,  BOOL,  "look/invert_y",    "", C, M)
+
+// ==========================================
+// Bunny Hop - Advanced movement options
+// ==========================================
+
+// Config only (no state needed)
 struct PlayerBunnyHop {
-    bool autohop;      // Hold to auto-jump
-    int cap_mode;      // 0=none, 1=hard, 2=soft
-    float threshold;   // Speed threshold factor
-    float drop;        // Speed drop factor
+    bool autohop{};
+    int cap_mode{};         // 0=None, 1=Hard, 2=Soft
+    float threshold{};
+    float drop{};
+};
+
+#define PLAYER_BUNNY_HOP_PROPS(X, C, M) \
+    X(autohop,   bool,  BOOL,  "bhop/autohop",   "",                       C, M) \
+    X(cap_mode,  int,   INT,   "bhop/cap_mode",  "None,Hard Cap,Soft Cap", C, M) \
+    X(threshold, float, FLOAT, "bhop/threshold", "",                       C, M) \
+    X(drop,      float, FLOAT, "bhop/drop",      "",                       C, M)
+
+// ==========================================
+// Input State - Runtime only (not serialized)
+// ==========================================
+
+struct PlayerInputState {
+    godot::Vector2 move;
+    godot::Vector2 look_delta;
+    godot::Vector2 look_stick;
+    bool jump_pressed{};
+    bool jump_held{};
 };
 ```
+
+**Pattern notes:**
+- Config structs: Plain POD, inspector-bound via X-macro
+- State structs: Runtime only, initialized fresh in compose()
+- Systems do all unit conversions (e.g., `sensitivity_pct` → raw sensitivity)
 
 ## File Structure
 
@@ -315,11 +349,15 @@ void Pawn::_bind_methods() {
 
 ### 5. PlayerPawn (`src/pawn/player/PlayerPawn.h`)
 
+Uses **POLARIS_ACCESSORS** to generate property accessors from X-macros.
+
 ```cpp
 #ifndef GAME_PLAYER_PAWN_H
 #define GAME_PLAYER_PAWN_H
 
 #include "pawn/Pawn.h"
+#include "PlayerComponents.h"
+#include "polaris/src/core/PropertyMacros.h"
 
 namespace Game {
 
@@ -329,18 +367,20 @@ class PlayerPawn : public Pawn {
 protected:
     static void _bind_methods();
 
-    float m_sensitivity = 0.002f;
-    bool m_invert_y = false;
-    bool m_autohop = false;
-    int m_bhop_cap_mode = 0;
-    float m_bhop_threshold = 1.7f;
-    float m_bhop_drop = 1.1f;
+    // Config members (serialized to .tres, synced to ECS on change)
+    PlayerLook m_look;
+    PlayerBunnyHop m_bunny_hop;
 
 public:
+    PlayerPawn() = default;
+    virtual ~PlayerPawn() = default;
+
     void compose(flecs::entity e, godot::Node* node) override;
     void decompose(flecs::entity e) override;
 
-    // Property accessors...
+    // Generated accessors (passthrough + sync)
+    POLARIS_ACCESSORS(PlayerLook, m_look, PLAYER_LOOK_PROPS)
+    POLARIS_ACCESSORS(PlayerBunnyHop, m_bunny_hop, PLAYER_BUNNY_HOP_PROPS)
 };
 
 } // namespace Game
@@ -352,14 +392,12 @@ public:
 
 ```cpp
 #include "PlayerPawn.h"
-#include "PlayerComponents.h"
 #include "pawn/Components.h"
 #include "components/Gd.h"
 #include <godot_cpp/classes/camera3d.hpp>
 
 namespace Game {
 
-// Composition Lifecycle (main logic - comes first)
 void PlayerPawn::compose(flecs::entity e, godot::Node* node) {
     Pawn::compose(e, node);  // Base setup
 
@@ -370,10 +408,14 @@ void PlayerPawn::compose(flecs::entity e, godot::Node* node) {
         }
     }
 
-    // Player components
+    // Config components (from .tres) - no conversion, just copy
+    e.set<PlayerLook>(m_look);
+    e.set<PlayerBunnyHop>(m_bunny_hop);
+
+    // State components (fresh) - runtime values start at defaults
+    e.set<PlayerLookState>({});
     e.set<PlayerInputState>({});
-    e.set<PlayerLook>({ 0, 0, m_sensitivity, m_invert_y });
-    e.set<PlayerBunnyHop>({ m_autohop, m_bhop_cap_mode, m_bhop_threshold, m_bhop_drop });
+
     e.add<Polaris::Tag::Player>();
 }
 
@@ -382,9 +424,12 @@ void PlayerPawn::decompose(flecs::entity e) {
     Pawn::decompose(e);
 }
 
-// Godot Bindings (boilerplate - comes last)
 void PlayerPawn::_bind_methods() {
-    // Bind sensitivity, invert_y, autohop, bhop_* properties
+    ADD_GROUP("Look", "look/");
+    POLARIS_BIND(PlayerPawn, PLAYER_LOOK_PROPS)
+
+    ADD_GROUP("Bunny Hop", "bhop/");
+    POLARIS_BIND(PlayerPawn, PLAYER_BUNNY_HOP_PROPS)
 }
 
 } // namespace Game
