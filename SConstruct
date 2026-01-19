@@ -25,7 +25,7 @@ env = SConscript(os.path.join(godot_cpp_path, 'SConstruct'))
 # Project configuration
 project_name = 'cortex'
 src_dir = 'src'
-flecs_dir = 'flecs'
+flecs_dir = 'third_party/flecs'
 out_dir = 'out'
 
 # Create variant directory for object files

@@ -308,7 +308,7 @@ public:
 
 ```cpp
 #include "Pawn.h"
-#include "Components.h"
+#include "PawnComponents.h"
 #include "components/Gd.h"
 #include <godot_cpp/classes/character_body3d.hpp>
 
@@ -392,7 +392,7 @@ public:
 
 ```cpp
 #include "PlayerPawn.h"
-#include "pawn/Components.h"
+#include "pawn/PawnComponents.h"
 #include "components/Gd.h"
 #include <godot_cpp/classes/camera3d.hpp>
 
@@ -463,7 +463,7 @@ void queue_mouse_delta(float dx, float dy);
 ```cpp
 #include "PlayerSystems.h"
 #include "PlayerComponents.h"
-#include "pawn/Components.h"
+#include "pawn/PawnComponents.h"
 #include "core/Runtime.h"
 #include "components/Gd.h"
 #include <godot_cpp/classes/input.hpp>

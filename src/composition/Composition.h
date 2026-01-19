@@ -35,6 +35,19 @@ class Composition : public Resource {
 protected:
     static void _bind_methods();
 
+    /// Entity reference for live editing (set in compose, cleared in decompose)
+    flecs::entity m_entity;
+
+    // =========================================================================
+    // ECS Sync - Push component to entity
+    // =========================================================================
+
+    /// Sync component to ECS entity. Called by setters after updating member.
+    template<typename T>
+    void sync(const T& component) {
+        if (m_entity.is_valid()) m_entity.set<T>(component);
+    }
+
 public:
     Composition() = default;
     virtual ~Composition() = default;

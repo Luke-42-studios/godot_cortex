@@ -17,6 +17,9 @@ void Composition::_bind_methods() {
 // =============================================================================
 
 void Composition::compose(flecs::entity entity, Node* root) {
+    // Store entity for sync<T>() to work
+    m_entity = entity;
+
     // Always set base Gd::Node for generic node access
     entity.set<Gd::Node>(Gd::Node::create(root));
 
@@ -38,6 +41,9 @@ void Composition::decompose(flecs::entity entity) {
     if (auto* node3d = entity.try_get_mut<Gd::Node3D>()) {
         node3d->unbind();
     }
+
+    // Clear entity reference
+    m_entity = flecs::entity();
 
     // Subclasses override to cleanup additional components
 }
